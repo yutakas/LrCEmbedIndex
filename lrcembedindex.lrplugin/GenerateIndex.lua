@@ -109,11 +109,16 @@ local function generateIndex()
 
                 local exifJson = json.encode( exifData )
 
+                -- Percent-encode JSON so special chars (quotes, backslashes in GPS etc.) survive HTTP headers
+                local exifEncoded = string.gsub( exifJson, "([^%w%-%.%_%~])", function( c )
+                    return string.format( "%%%02X", string.byte( c ) )
+                end )
+
                 local headers = {
                     { field = 'Content-Type', value = 'image/jpeg' },
                     { field = 'Content-Length', value = string.len( thumbnailPixels ) },
                     { field = 'X-Image-Path', value = imagePath },
-                    { field = 'X-Exif-Data', value = exifJson },
+                    { field = 'X-Exif-Data', value = exifEncoded },
                 }
 
                 local response, hdrs = LrHttp.post(

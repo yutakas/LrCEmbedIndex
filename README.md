@@ -1,11 +1,12 @@
 # LrCEmbedIndex
 
-A Lightroom Classic plugin and Python server for AI-powered photo indexing and semantic search using Ollama vision and embedding models.
+A Lightroom Classic plugin and Python server for AI-powered photo indexing and semantic search. Supports both **Ollama** (local) and **OpenAI API** backends for vision and embedding models.
 
 ## Overview
 
 - **Lightroom Classic Plugin** generates JPEG thumbnails and extracts EXIF metadata from your photo library, sending them to a local Python server.
-- **Python Server** uses Ollama to describe each photo (via `qwen3.5` vision model), generates vector embeddings (via `nomic-embed-text`), and stores everything in ChromaDB for fast semantic search.
+- **Python Server** describes each photo using a vision model, generates vector embeddings, and stores everything in ChromaDB for fast semantic search.
+- **Dual backend support** — toggle between Ollama and OpenAI independently for vision and embedding.
 
 ## Architecture
 
@@ -13,15 +14,15 @@ A Lightroom Classic plugin and Python server for AI-powered photo indexing and s
 Lightroom Classic
   ├── Generate Index  ──►  POST /index   (JPEG + EXIF + image path)
   ├── Search Photo    ──►  POST /search  (query text)
-  └── Settings UI     ──►  POST /settings (index folder, ollama URL)
+  └── Settings UI     ──►  POST /settings (all configuration)
                                │
                           Python Server (Flask, port 8600)
                                │
                      ┌─────────┼─────────┐
                      ▼         ▼         ▼
-                  Ollama    ChromaDB   Metadata
-                (vision +  (vector    (sharded
-                 embed)     store)     JSON files)
+              Ollama/OpenAI  ChromaDB   Metadata
+              (vision +      (per-model  (sharded
+               embed)        vector DB)  JSON files)
 ```
 
 ## Project Structure
@@ -32,21 +33,29 @@ LrCEmbedIndex/
 │   ├── Info.lua                 # Plugin manifest
 │   ├── GenerateIndex.lua        # Menu: index all photos in selected folder
 │   ├── SearchPhoto.lua          # Menu: semantic search dialog
-│   ├── PluginInfoProvider.lua   # Settings UI (index folder, ollama URL)
+│   ├── PluginInfoProvider.lua   # Settings UI
 │   └── dkjson.lua               # JSON library
 ├── server/
-│   ├── server.py                # Python Flask REST server
+│   ├── server.py                # Flask app entry point
+│   ├── routes.py                # API route handlers
+│   ├── config.py                # Configuration management
+│   ├── vision.py                # Vision model integration (Ollama/OpenAI)
+│   ├── embedding.py             # Embedding model integration (Ollama/OpenAI)
+│   ├── vectorstore.py           # ChromaDB vector store with relevance filtering
+│   ├── metadata.py              # Sharded JSON metadata storage
+│   ├── helpers.py               # EXIF-to-text conversion, utilities
 │   └── requirements.txt         # Python dependencies
-└── README.md
+├── README.md
+└── LICENSE
 ```
 
 ## Prerequisites
 
-- [Ollama](https://ollama.ai/) running with the following models pulled:
-  - `qwen3.5` (vision model for image description)
-  - `nomic-embed-text` (embedding model for vector search)
 - Python 3.11+
 - Adobe Lightroom Classic
+- **For Ollama mode:** [Ollama](https://ollama.ai/) running with models pulled:
+  - `qwen3.5` (vision) and `nomic-embed-text` (embedding), or your preferred models
+- **For OpenAI mode:** An OpenAI API key
 
 ## Setup
 
@@ -72,10 +81,24 @@ The server runs on port 8600 by default.
 1. Open Lightroom Classic
 2. Go to **File > Plug-in Manager**
 3. Click **Add** and select the `lrcembedindex.lrplugin` folder
-4. In the plugin settings panel, configure:
+4. In the plugin settings, configure:
+
+   **General Settings:**
    - **Python Server URL** (default: `http://localhost:8600`)
-   - **Ollama Endpoint** (default: `http://localhost:11434`)
    - **Index & Metadata Folder** — where metadata and ChromaDB data are stored
+   - **Search Max Results** — max candidates from vector DB per search (default: 10)
+   - **Relevance Threshold** — slider (0–100) controlling how strict the relevance filter is
+
+   **Vision Model:**
+   - Toggle between **Ollama** and **OpenAI API**
+   - Ollama: endpoint URL + model name (default: `qwen3.5`)
+   - OpenAI: API key (uses `gpt-4o`)
+
+   **Embedding Model:**
+   - Toggle between **Ollama** and **OpenAI API**
+   - Ollama: endpoint URL + model name (default: `nomic-embed-text`)
+   - OpenAI: API key (uses `text-embedding-3-small`)
+
 5. Click **Save & Apply Settings**
 
 ## Usage
@@ -87,49 +110,54 @@ The server runs on port 8600 by default.
 3. All photos in the selected folder will be processed:
    - JPEG thumbnail generated and sent to the server
    - EXIF metadata (camera, lens, settings, GPS, keywords, etc.) extracted and sent
-   - Ollama vision model describes the image
+   - Vision model describes the image
    - EXIF text is appended to the description
    - Combined text is embedded and stored in ChromaDB
-
-Photos already indexed with the same models are automatically skipped.
+4. Photos already indexed with the same vision and embedding models are automatically skipped
 
 ### Search Photo
 
 1. Go to **Library > Plug-in Extras > Search Photo**
-2. Enter a natural language description (e.g., "sunset over the ocean", "portrait with bokeh", "Canon 70-200mm")
-3. The top 10 matching photos are returned with file paths and descriptions
+2. Enter a natural language description (e.g., "sunset over the ocean", "portrait with bokeh", "Leica 50mm lens")
+3. Results are filtered by a three-stage relevance algorithm:
+   - **Absolute distance threshold** — removes clearly irrelevant matches
+   - **Gap detection** — finds natural boundaries between relevant and noise
+   - **Relative-to-best filtering** — keeps only results in the same neighbourhood as the top match
+4. Adjust the **Relevance Threshold** slider in settings to tune strictness
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/index` | POST | Index a photo. Body: JPEG data. Headers: `X-Image-Path`, `X-Exif-Data` |
+| `/index` | POST | Index a photo. Body: JPEG data. Headers: `X-Image-Path`, `X-Exif-Data` (percent-encoded JSON) |
 | `/search` | POST | Search photos. Body: `{"query": "..."}` |
-| `/settings` | POST | Update config. Body: `{"index_folder": "...", "ollama_url": "..."}` |
+| `/settings` | POST | Update config. Body: JSON with any config keys |
 
 ## Data Storage
 
-Metadata is stored in a sharded folder structure to handle 10,000+ photos efficiently:
+Metadata is stored in a sharded folder structure to handle 10,000+ photos efficiently. ChromaDB is stored per embedding model so switching models doesn't corrupt the vector space:
 
 ```
 <index_folder>/
 ├── metadata/
 │   ├── 0a/
-│   │   └── 0a3f...e7.json     # per-photo metadata
+│   │   └── 0a3f...e7.json          # per-photo metadata
 │   ├── 1b/
 │   │   └── 1b7d...f3.json
-│   └── ...                     # up to 256 shard directories
-├── chromadb/                   # ChromaDB vector store
-└── lrcembedindex_config.json   # server config
+│   └── ...                          # up to 256 shard directories
+├── chromadb/
+│   ├── ollama_nomic-embed-text/     # ChromaDB for Ollama embeddings
+│   └── openai_text-embedding-3-small/  # ChromaDB for OpenAI embeddings
+└── lrcembedindex_config.json        # server config
 ```
 
 Each metadata JSON contains:
 - `image_path` — original file path
-- `vision_description` — raw Ollama vision output
+- `vision_description` — raw vision model output
 - `description` — combined vision + EXIF text (used for embedding)
 - `exif` — full EXIF data from Lightroom
 - `embedding` — vector embedding
-- `vision_model` / `embed_model` — model names used
+- `vision_model` / `embed_model` — model labels (e.g., `ollama:qwen3.5`, `openai:gpt-4o`)
 - `processed_at` — UTC timestamp
 
 ## License
