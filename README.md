@@ -151,14 +151,36 @@ Metadata is stored in a sharded folder structure to handle 10,000+ photos effici
 └── lrcembedindex_config.json        # server config
 ```
 
-Each metadata JSON contains:
-- `image_path` — original file path
-- `vision_description` — raw vision model output
-- `description` — combined vision + EXIF text (used for embedding)
-- `exif` — full EXIF data from Lightroom
-- `embedding` — vector embedding
-- `vision_model` / `embed_model` — model labels (e.g., `ollama:qwen3.5`, `openai:gpt-4o`)
-- `processed_at` — UTC timestamp
+Each metadata JSON stores results from multiple models so switching backends doesn't lose prior work:
+
+```json
+{
+  "image_path": "/path/to/IMG_1234.DNG",
+  "vision_results": {
+    "ollama:qwen3.5": {
+      "vision_description": "A motorcycle racer ...",
+      "exif": { "cameraModel": "LEICA M11-P", ... },
+      "full_description": "A motorcycle racer ...\n\n--- Photo Metadata ---\n...",
+      "processed_at": "2026-03-15T14:22:08Z",
+      "embeddings": {
+        "ollama:nomic-embed-text": {
+          "embedding": [0.012, -0.034, ...],
+          "description_used": "A motorcycle racer ...",
+          "processed_at": "2026-03-15T14:22:09Z"
+        }
+      }
+    },
+    "openai:gpt-4o": { ... }
+  }
+}
+```
+
+Key fields:
+- `vision_results.<model>` — cached output per vision model (description, EXIF, timestamp)
+- `vision_results.<model>.embeddings.<model>` — cached embedding per vision+embed pair
+- Indexing skips the vision API call if the same vision model result is cached
+- Indexing skips the embedding API call if the same vision+embed pair is cached
+- ChromaDB is always updated to stay in sync with the current model pair
 
 ## License
 
