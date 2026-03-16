@@ -19,7 +19,7 @@ def _get_embedding_ollama(text):
         "model": config["ollama_embed_model"],
         "prompt": text,
     }
-    resp = requests.post(url, json=payload, timeout=60)
+    resp = requests.post(url, json=payload, timeout=300)
     resp.raise_for_status()
     data = resp.json()
     return data.get("embedding")
@@ -36,7 +36,7 @@ def _get_embedding_openai(text):
         "input": text,
     }
     resp = requests.post("https://api.openai.com/v1/embeddings",
-                         headers=headers, json=payload, timeout=60)
+                         headers=headers, json=payload, timeout=300)
     resp.raise_for_status()
     data = resp.json()
     return data["data"][0]["embedding"]

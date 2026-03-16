@@ -30,7 +30,7 @@ def _describe_image_ollama(image_path_on_disk):
         ],
         "stream": False,
     }
-    resp = requests.post(url, json=payload, timeout=120)
+    resp = requests.post(url, json=payload, timeout=300)
     resp.raise_for_status()
     data = resp.json()
     return data.get("message", {}).get("content", "")
@@ -64,10 +64,10 @@ def _describe_image_openai(image_path_on_disk):
                 ],
             }
         ],
-        "max_tokens": 1000,
+        "stream": False,
     }
     resp = requests.post("https://api.openai.com/v1/chat/completions",
-                         headers=headers, json=payload, timeout=120)
+                         headers=headers, json=payload, timeout=300)
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
