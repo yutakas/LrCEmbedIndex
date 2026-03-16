@@ -12,17 +12,19 @@ A Lightroom Classic plugin and Python server for AI-powered photo indexing and s
 
 ```
 Lightroom Classic
-  ├── Generate Index  ──►  POST /index   (JPEG + EXIF + image path)
-  ├── Search Photo    ──►  POST /search  (query text)
-  └── Settings UI     ──►  POST /settings (all configuration)
-                               │
-                          Python Server (Flask, port 8600)
-                               │
-                     ┌─────────┼─────────┐
-                     ▼         ▼         ▼
-              Ollama/OpenAI  ChromaDB   Metadata
-              (vision +      (per-model  (sharded
-               embed)        vector DB)  JSON files)
+  ├── Generate Index         ──►  POST /index    (JPEG + EXIF + image path)
+  ├── Search Photo           ──►  POST /search   (query text + relevance + max)
+  ├── Describe Selected Photo──►  POST /describe (JPEG + EXIF, vision only)
+  ├── Show Index Stats       ──►  GET  /stats    (DB & metadata statistics)
+  └── Settings UI            ──►  POST /settings (all configuration)
+                                   │
+                              Python Server (Flask, port 8600)
+                                   │
+                         ┌─────────┼─────────┐
+                         ▼         ▼         ▼
+                  Ollama/OpenAI  ChromaDB   Metadata
+                  (vision +      (per-model  (sharded
+                   embed)        vector DB)  JSON files)
 ```
 
 ## Project Structure
@@ -32,7 +34,9 @@ LrCEmbedIndex/
 ├── lrcembedindex.lrplugin/
 │   ├── Info.lua                 # Plugin manifest
 │   ├── GenerateIndex.lua        # Menu: index all photos in selected folder
-│   ├── SearchPhoto.lua          # Menu: semantic search dialog
+│   ├── SearchPhoto.lua          # Menu: semantic search with collection results
+│   ├── DescribePhoto.lua        # Menu: describe a single selected photo
+│   ├── ShowStats.lua            # Menu: show ChromaDB & metadata statistics
 │   ├── PluginInfoProvider.lua   # Settings UI
 │   └── dkjson.lua               # JSON library
 ├── server/
@@ -119,18 +123,36 @@ The server runs on port 8600 by default.
 
 1. Go to **Library > Plug-in Extras > Search Photo**
 2. Enter a natural language description (e.g., "sunset over the ocean", "portrait with bokeh", "Leica 50mm lens")
-3. Results are filtered by a three-stage relevance algorithm:
+3. Adjust **Max results** and **Relevance** slider directly in the search dialog (values are remembered between searches)
+4. Results are filtered by a three-stage relevance algorithm:
    - **Absolute distance threshold** — removes clearly irrelevant matches
    - **Gap detection** — finds natural boundaries between relevant and noise
    - **Relative-to-best filtering** — keeps only results in the same neighbourhood as the top match
-4. Adjust the **Relevance Threshold** slider in settings to tune strictness
+5. Matching photos are collected into a **"LrCEmbedIndex Search Results"** collection and displayed in the Library module
+
+### Describe Selected Photo
+
+1. Select a **single** photo in the Library module
+2. Go to **Library > Plug-in Extras > Describe Selected Photo**
+3. The plugin sends the photo to the vision model and displays the AI-generated description
+4. If the photo was previously indexed with the same vision model, the cached description is returned instantly without calling the API
+
+### Show Index Stats
+
+1. Go to **Library > Plug-in Extras > Show Index Stats**
+2. Displays a summary of:
+   - Current configuration (models, endpoints, search settings)
+   - Metadata statistics (total files, per-vision-model counts, per-embed-pair counts, date range)
+   - ChromaDB vector store statistics (current store count, all stores with vector counts)
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/index` | POST | Index a photo. Body: JPEG data. Headers: `X-Image-Path`, `X-Exif-Data` (percent-encoded JSON) |
-| `/search` | POST | Search photos. Body: `{"query": "..."}` |
+| `/search` | POST | Search photos. Body: `{"query": "...", "max_results": 10, "relevance": 50}` |
+| `/describe` | POST | Describe a single photo (vision only, uses cache). Body: JPEG data. Headers: `X-Image-Path`, `X-Exif-Data` |
+| `/stats` | GET | Get metadata, ChromaDB, and config statistics |
 | `/settings` | POST | Update config. Body: JSON with any config keys |
 
 ## Data Storage

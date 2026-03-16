@@ -11,8 +11,9 @@ from config import (config, get_vision_model_label, get_embed_model_label,
                     save_config, save_last_config_pointer)
 from metadata import (load_photo_metadata, save_photo_metadata,
                       get_vision_result, set_vision_result,
-                      get_embed_result, set_embed_result)
-from vectorstore import init_chromadb, upsert_photo, search_photos
+                      get_embed_result, set_embed_result,
+                      count_metadata_files, collect_metadata_stats)
+from vectorstore import init_chromadb, upsert_photo, search_photos, get_chromadb_stats
 from vision import describe_image
 from embedding import get_embedding
 from helpers import exif_to_text, sanitize_chroma_id
@@ -20,6 +21,88 @@ from helpers import exif_to_text, sanitize_chroma_id
 logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__)
+
+
+@api.route("/describe", methods=["POST"])
+def describe_photo():
+    """Vision-only endpoint: describe a single photo, using cached metadata if available."""
+    t_start = time.time()
+    try:
+        image_path = request.headers.get("X-Image-Path", "")
+
+        # Parse EXIF
+        exif_raw = request.headers.get("X-Exif-Data", "{}")
+        exif_json_str = unquote(exif_raw)
+        try:
+            exif_data = json.loads(exif_json_str)
+        except json.JSONDecodeError:
+            exif_data = {}
+
+        jpeg_data = request.get_data()
+        if not jpeg_data:
+            return jsonify({"status": "error", "message": "No image data received"}), 400
+
+        vision_label = get_vision_model_label()
+
+        # Check cached metadata first
+        existing = load_photo_metadata(image_path) if image_path else None
+        cached_vision = get_vision_result(existing, vision_label) if existing else None
+
+        if cached_vision and cached_vision.get("full_description"):
+            full_description = cached_vision["full_description"]
+            vision_description = cached_vision["vision_description"]
+            cached_at = cached_vision.get("processed_at", "unknown")
+            elapsed = time.time() - t_start
+            logger.info(f"POST /describe completed in {elapsed:.1f}s — "
+                        f"{image_path} (cached from {cached_at})")
+            return jsonify({
+                "status": "ok",
+                "description": full_description,
+                "vision_description": vision_description,
+                "vision_model": vision_label,
+                "cached": True,
+                "cached_at": cached_at,
+                "elapsed": round(elapsed, 2),
+            })
+
+        # No cache — call vision model
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp.write(jpeg_data)
+                tmp_path = tmp.name
+
+            t_vision = time.time()
+            logger.info(f"Describe: generating description for {image_path} using {vision_label}")
+            vision_description = describe_image(tmp_path)
+            logger.info(f"Describe: vision took {time.time() - t_vision:.1f}s")
+
+            # Append EXIF
+            exif_text = exif_to_text(exif_data)
+            if exif_text:
+                full_description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
+            else:
+                full_description = vision_description
+
+            elapsed = time.time() - t_start
+            logger.info(f"POST /describe completed in {elapsed:.1f}s — {image_path}")
+            return jsonify({
+                "status": "ok",
+                "description": full_description,
+                "vision_description": vision_description,
+                "vision_model": vision_label,
+                "cached": False,
+                "elapsed": round(elapsed, 2),
+            })
+
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    except Exception as e:
+        elapsed = time.time() - t_start
+        logger.exception(f"POST /describe failed in {elapsed:.1f}s: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @api.route("/index", methods=["POST"])
@@ -169,12 +252,18 @@ def search_photo():
         if not embedding:
             return jsonify({"status": "error", "message": "Failed to generate query embedding"}), 500
 
-        max_results = config.get("search_max_results", 10)
-        matches = search_photos(embedding, n_results=max_results)
+        # Per-request overrides from the search dialog, fall back to config
+        max_results = data.get("max_results", config.get("search_max_results", 10))
+        relevance = data.get("relevance", config.get("search_relevance", 50))
+        matches = search_photos(embedding, n_results=max_results, relevance=relevance)
 
         elapsed = time.time() - t_start
         logger.info(f"POST /search completed in {elapsed:.1f}s — "
                     f"query='{query}', {len(matches)} results")
+        for i, m in enumerate(matches):
+            path = os.path.basename(m.get("path", "?"))
+            dist = m.get("distance", 0)
+            logger.info(f"  #{i+1} dist={dist:.4f}  {path}")
         return jsonify({"status": "ok", "results": matches, "elapsed": round(elapsed, 2)})
 
     except Exception as e:
@@ -232,4 +321,40 @@ def update_settings():
     except Exception as e:
         elapsed = time.time() - t_start
         logger.exception(f"POST /settings failed in {elapsed:.1f}s: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api.route("/stats", methods=["GET"])
+def get_stats():
+    t_start = time.time()
+    try:
+        # Metadata stats
+        meta_count = count_metadata_files()
+        meta_stats = collect_metadata_stats()
+
+        # ChromaDB stats
+        chroma_stats = get_chromadb_stats()
+
+        # Current config (redact API keys)
+        safe_config = {k: v for k, v in config.items() if "api_key" not in k}
+
+        elapsed = time.time() - t_start
+        logger.info(f"GET /stats completed in {elapsed:.1f}s")
+        return jsonify({
+            "status": "ok",
+            "metadata": {
+                "total_files": meta_count,
+                "vision_models": meta_stats.get("vision_models", {}),
+                "embed_models": meta_stats.get("embed_models", {}),
+                "oldest_entry": meta_stats.get("oldest_entry"),
+                "newest_entry": meta_stats.get("newest_entry"),
+            },
+            "chromadb": chroma_stats,
+            "config": safe_config,
+            "elapsed": round(elapsed, 2),
+        })
+
+    except Exception as e:
+        elapsed = time.time() - t_start
+        logger.exception(f"GET /stats failed in {elapsed:.1f}s: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500

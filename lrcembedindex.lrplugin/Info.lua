@@ -12,6 +12,14 @@ return {
             title = "Search Photo",
             file = "SearchPhoto.lua",
         },
+        {
+            title = "Describe Selected Photo",
+            file = "DescribePhoto.lua",
+        },
+        {
+            title = "Show Index Stats",
+            file = "ShowStats.lua",
+        },
     },
 
     LrPluginInfoProvider = 'PluginInfoProvider.lua',

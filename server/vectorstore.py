@@ -52,6 +52,40 @@ def _ensure_correct_store():
         init_chromadb()
 
 
+def get_chromadb_stats():
+    """Return stats about all ChromaDB stores in the index folder."""
+    stats = {
+        "current_model": get_embed_model_label(),
+        "current_count": chroma_collection.count() if chroma_collection else 0,
+        "current_path": get_chroma_path(),
+        "all_stores": [],
+    }
+
+    # List all per-model ChromaDB directories
+    if config["index_folder"]:
+        chroma_base = os.path.join(config["index_folder"], CHROMA_BASE_DIR)
+        if os.path.isdir(chroma_base):
+            for name in sorted(os.listdir(chroma_base)):
+                store_path = os.path.join(chroma_base, name)
+                if not os.path.isdir(store_path):
+                    continue
+                try:
+                    client = chromadb.PersistentClient(path=store_path)
+                    col = client.get_or_create_collection(
+                        name="photo_index",
+                        metadata={"hnsw:space": "cosine"},
+                    )
+                    count = col.count()
+                except Exception:
+                    count = -1
+                stats["all_stores"].append({
+                    "model_dir": name,
+                    "count": count,
+                })
+
+    return stats
+
+
 def upsert_photo(doc_id, embedding, description, image_path):
     _ensure_correct_store()
     if chroma_collection is None:
@@ -80,10 +114,10 @@ def _relevance_to_params(relevance):
     return max_distance, gap_ratio, best_ratio
 
 
-def _filter_relevant(matches):
+def _filter_relevant(matches, relevance=None):
     """Filter search results to only include relevant photos.
 
-    Uses the search_relevance config (0-100 slider) to derive:
+    Uses the relevance value (0-100 slider) to derive:
       1. Absolute threshold  – drop anything with cosine distance > max_distance
       2. Gap detection       – if distance[i] / distance[i-1] > gap_ratio,
                                there is a natural boundary; cut off there
@@ -96,7 +130,8 @@ def _filter_relevant(matches):
     if not matches:
         return matches
 
-    relevance = config.get("search_relevance", 50)
+    if relevance is None:
+        relevance = config.get("search_relevance", 50)
     max_distance, gap_ratio, best_ratio = _relevance_to_params(relevance)
     logger.info(f"Relevance slider={relevance} → max_dist={max_distance:.2f}, "
                 f"gap_ratio={gap_ratio:.2f}, best_ratio={best_ratio:.2f}")
@@ -129,7 +164,7 @@ def _filter_relevant(matches):
     return filtered
 
 
-def search_photos(embedding, n_results=10):
+def search_photos(embedding, n_results=10, relevance=None):
     _ensure_correct_store()
     if chroma_collection is None or chroma_collection.count() == 0:
         return []
@@ -149,4 +184,4 @@ def search_photos(embedding, n_results=10):
                 "description": description,
                 "distance": distance,
             })
-    return _filter_relevant(matches)
+    return _filter_relevant(matches, relevance=relevance)

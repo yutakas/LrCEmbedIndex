@@ -104,3 +104,64 @@ def count_metadata_files():
         if os.path.isdir(shard_path):
             count += len([f for f in os.listdir(shard_path) if f.endswith(".json")])
     return count
+
+
+def collect_metadata_stats():
+    """Scan all metadata files and return aggregate stats.
+
+    Returns dict with:
+        vision_models:  {model_label: count}
+        embed_models:   {"vision_label/embed_label": count}
+        oldest_entry:   earliest processed_at ISO string
+        newest_entry:   latest processed_at ISO string
+    """
+    meta_dir = get_metadata_dir()
+    if not meta_dir or not os.path.exists(meta_dir):
+        return {}
+
+    vision_counts = {}
+    embed_counts = {}
+    oldest = None
+    newest = None
+
+    for shard in os.listdir(meta_dir):
+        shard_path = os.path.join(meta_dir, shard)
+        if not os.path.isdir(shard_path):
+            continue
+        for fname in os.listdir(shard_path):
+            if not fname.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(shard_path, fname), "r") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            vision_results = data.get("vision_results", {})
+            for v_label, v_data in vision_results.items():
+                vision_counts[v_label] = vision_counts.get(v_label, 0) + 1
+
+                ts = v_data.get("processed_at")
+                if ts:
+                    if oldest is None or ts < oldest:
+                        oldest = ts
+                    if newest is None or ts > newest:
+                        newest = ts
+
+                for e_label in v_data.get("embeddings", {}):
+                    pair = f"{v_label} / {e_label}"
+                    embed_counts[pair] = embed_counts.get(pair, 0) + 1
+
+                    e_ts = v_data["embeddings"][e_label].get("processed_at")
+                    if e_ts:
+                        if oldest is None or e_ts < oldest:
+                            oldest = e_ts
+                        if newest is None or e_ts > newest:
+                            newest = e_ts
+
+    return {
+        "vision_models": vision_counts,
+        "embed_models": embed_counts,
+        "oldest_entry": oldest,
+        "newest_entry": newest,
+    }
