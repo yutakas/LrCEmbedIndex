@@ -17,17 +17,49 @@ logger:enable( "logfile" )
 local COLLECTION_NAME = "LrCEmbedIndex Search Results"
 
 
--- Build a lookup table: file path -> LrPhoto for fast matching
-local function buildPathLookup( catalog )
-    local lookup = {}
-    local allPhotos = catalog:getAllPhotos()
-    for _, photo in ipairs( allPhotos ) do
-        local path = photo:getRawMetadata( "path" )
-        if path then
-            lookup[path] = photo
+-- Build folder path -> LrFolder lookup (recursive)
+local function indexFolders( folders, lookup )
+    for _, folder in ipairs( folders ) do
+        lookup[folder:getPath()] = folder
+        indexFolders( folder:getChildren(), lookup )
+    end
+end
+
+
+-- Find photos by their full paths, searching only in the relevant folders.
+-- Much faster than iterating all catalog photos for large catalogs.
+local function findPhotosByPaths( catalog, targetPaths )
+    -- Group target paths by parent folder
+    local folderToFiles = {}
+    for _, filePath in ipairs( targetPaths ) do
+        local folderPath = LrPathUtils.parent( filePath )
+        if folderPath then
+            if not folderToFiles[folderPath] then
+                folderToFiles[folderPath] = {}
+            end
+            folderToFiles[folderPath][filePath] = true
         end
     end
-    return lookup
+
+    -- Build folder lookup from catalog (recursive)
+    local folderLookup = {}
+    indexFolders( catalog:getFolders(), folderLookup )
+
+    -- Search only within the specific folders that contain results
+    local found = {}
+    for folderPath, fileSet in pairs( folderToFiles ) do
+        local folder = folderLookup[folderPath]
+        if folder then
+            local photos = folder:getPhotos()
+            for _, photo in ipairs( photos ) do
+                local p = photo:getRawMetadata( "path" )
+                if p and fileSet[p] then
+                    found[p] = photo
+                end
+            end
+        end
+    end
+    return found
 end
 
 
@@ -154,13 +186,21 @@ local function searchPhoto()
 
                 local catalog = LrApplication.activeCatalog()
 
-                -- Build path -> LrPhoto lookup
-                local lookup = buildPathLookup( catalog )
+                -- Collect result paths
+                local targetPaths = {}
+                for _, item in ipairs( data.results ) do
+                    if item.path and item.path ~= "" then
+                        table.insert( targetPaths, item.path )
+                    end
+                end
 
-                -- Match results to catalog photos
+                -- Find photos by searching only in relevant folders (fast)
+                local lookup = findPhotosByPaths( catalog, targetPaths )
+
+                -- Match results to catalog photos (preserve server order)
                 local foundPhotos = {}
                 local notFound = {}
-                for idx, item in ipairs( data.results ) do
+                for _, item in ipairs( data.results ) do
                     local path = item.path or ""
                     local photo = lookup[path]
                     if photo then
