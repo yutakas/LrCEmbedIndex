@@ -239,11 +239,12 @@ local function searchPhoto()
                     end
                 end
 
-                local msg = "Found " .. #foundPhotos .. " photos in catalog"
+                local msg = "Found " .. #foundPhotos .. " photos in catalog (sorted by relevance)"
                 if #notFound > 0 then
-                    msg = msg .. " (" .. #notFound .. " not in catalog)"
+                    msg = msg .. "\n" .. #notFound .. " result(s) not found in catalog"
                 end
-                logger:info( msg )
+                msg = msg .. "\n\nTip: Set Sort to \"Custom Order\" in the toolbar to see results ranked by score."
+                logger:info( "Found " .. #foundPhotos .. " photos, " .. #notFound .. " not in catalog" )
                 LrDialogs.message( "Search Results", msg, "info" )
             end )
         end

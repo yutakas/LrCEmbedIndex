@@ -129,6 +129,7 @@ The server runs on port 8600 by default.
    - **Gap detection** — finds natural boundaries between relevant and noise
    - **Relative-to-best filtering** — keeps only results in the same neighbourhood as the top match
 5. Matching photos are collected into a **"LrCEmbedIndex Search Results"** collection and displayed in the Library module
+6. Results are added in score order (best match first). To see them ranked by relevance, set the Sort order to **"Custom Order"** in the Library toolbar. Lightroom remembers this setting per collection, so you only need to set it once.
 
 ### Describe Selected Photo
 
