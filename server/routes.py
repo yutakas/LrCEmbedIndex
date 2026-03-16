@@ -1,15 +1,17 @@
 import json
 import logging
 import tempfile
+import time
 import os
-from datetime import datetime, timezone
 from urllib.parse import unquote
 
 from flask import Blueprint, request, jsonify
 
 from config import (config, get_vision_model_label, get_embed_model_label,
                     save_config, save_last_config_pointer)
-from metadata import load_photo_metadata, save_photo_metadata
+from metadata import (load_photo_metadata, save_photo_metadata,
+                      get_vision_result, set_vision_result,
+                      get_embed_result, set_embed_result)
 from vectorstore import init_chromadb, upsert_photo, search_photos
 from vision import describe_image
 from embedding import get_embedding
@@ -22,6 +24,7 @@ api = Blueprint("api", __name__)
 
 @api.route("/index", methods=["POST"])
 def index_photo():
+    t_start = time.time()
     try:
         image_path = request.headers.get("X-Image-Path", "")
         if not image_path:
@@ -47,71 +50,111 @@ def index_photo():
         vision_label = get_vision_model_label()
         embed_label = get_embed_model_label()
 
-        # Check existing metadata — skip if already processed with same models
-        existing = load_photo_metadata(image_path)
-        if (existing
-                and existing.get("vision_model") == vision_label
-                and existing.get("embed_model") == embed_label
-                and existing.get("description")):
-            logger.info(f"Skipping {image_path} — already indexed with {vision_label}/{embed_label}")
-            return jsonify({
-                "status": "ok",
-                "skipped": True,
-                "description": existing["description"],
-                "processed_at": existing.get("processed_at", ""),
-            })
+        # Load existing metadata (may contain results from other models)
+        existing = load_photo_metadata(image_path) or {}
 
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp.write(jpeg_data)
-            tmp_path = tmp.name
+        # --- Vision step: reuse if same vision model already ran ---
+        cached_vision = get_vision_result(existing, vision_label)
+        if cached_vision and cached_vision.get("full_description"):
+            description = cached_vision["full_description"]
+            vision_description = cached_vision["vision_description"]
+            logger.info(f"Reusing cached vision for {image_path} ({vision_label})")
+            need_vision = False
+        else:
+            need_vision = True
 
+        # --- Embed step: reuse cached embedding if vision+embed pair exists ---
+        cached_embed = get_embed_result(existing, vision_label, embed_label)
+        need_embed = True
+        if (not need_vision
+                and cached_embed
+                and cached_embed.get("embedding")
+                and cached_embed.get("description_used") == description):
+            # Embedding already computed for this vision+embed pair.
+            # Still upsert to ChromaDB since we don't know which model
+            # pair produced the current ChromaDB entry.
+            embedding = cached_embed["embedding"]
+            need_embed = False
+            logger.info(f"Reusing cached embedding for {image_path} "
+                        f"({vision_label}/{embed_label})")
+
+        # --- Run vision if needed ---
+        tmp_path = None
         try:
-            # Get description from vision model
-            logger.info(f"Generating description for {image_path} using {vision_label}")
-            vision_description = describe_image(tmp_path)
-            logger.info(f"Description: {vision_description[:100]}...")
+            if need_vision:
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                    tmp.write(jpeg_data)
+                    tmp_path = tmp.name
 
-            # Append EXIF info to description for richer embedding
-            exif_text = exif_to_text(exif_data)
-            if exif_text:
-                description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
-            else:
-                description = vision_description
+                t_vision = time.time()
+                logger.info(f"Generating description for {image_path} using {vision_label}")
+                vision_description = describe_image(tmp_path)
+                logger.info(f"Vision took {time.time() - t_vision:.1f}s — "
+                            f"{vision_description[:100]}...")
 
-            # Get embedding from combined description
-            logger.info(f"Generating embedding for {image_path} using {embed_label}")
-            embedding = get_embedding(description)
-            if not embedding:
-                return jsonify({"status": "error", "message": "Failed to generate embedding"}), 500
+                # Append EXIF info to description for richer embedding
+                exif_text = exif_to_text(exif_data)
+                if exif_text:
+                    description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
+                else:
+                    description = vision_description
 
-            # Store in metadata (one JSON file per photo, sharded)
-            save_photo_metadata(image_path, {
-                "description": description,
-                "vision_description": vision_description,
-                "exif": exif_data,
-                "embedding": embedding,
-                "vision_model": vision_label,
-                "embed_model": embed_label,
-                "processed_at": datetime.now(timezone.utc).isoformat(),
-            })
+                # Save vision result (preserves other models' results)
+                set_vision_result(existing, vision_label, vision_description,
+                                  exif_data, description)
 
-            # Store/update in ChromaDB
+            # --- Generate embedding if needed ---
+            if need_embed:
+                t_embed = time.time()
+                logger.info(f"Generating embedding for {image_path} using {embed_label}")
+                embedding = get_embedding(description)
+                logger.info(f"Embedding took {time.time() - t_embed:.1f}s")
+                if not embedding:
+                    return jsonify({"status": "error",
+                                    "message": "Failed to generate embedding"}), 500
+
+                # Save embed result nested under the vision result
+                set_embed_result(existing, vision_label, embed_label,
+                                 embedding, description)
+
+            # Persist metadata
+            save_photo_metadata(image_path, existing)
+
+            # Always upsert to ChromaDB — we don't know which model pair
+            # produced the current entry, so keep it in sync
             doc_id = sanitize_chroma_id(image_path)
             upsert_photo(doc_id, embedding, description, image_path)
 
-            logger.info(f"Indexed {image_path} successfully")
-            return jsonify({"status": "ok", "description": description})
+            elapsed = time.time() - t_start
+            skipped_parts = []
+            if not need_vision:
+                skipped_parts.append("vision")
+            if not need_embed:
+                skipped_parts.append("embed")
+            skip_msg = f" (reused: {', '.join(skipped_parts)})" if skipped_parts else ""
+            logger.info(f"POST /index completed in {elapsed:.1f}s — "
+                        f"{image_path}{skip_msg}")
+            return jsonify({
+                "status": "ok",
+                "description": description,
+                "skipped_vision": not need_vision,
+                "skipped_embed": not need_embed,
+                "elapsed": round(elapsed, 2),
+            })
 
         finally:
-            os.unlink(tmp_path)
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     except Exception as e:
-        logger.exception(f"Error indexing photo: {e}")
+        elapsed = time.time() - t_start
+        logger.exception(f"POST /index failed in {elapsed:.1f}s: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @api.route("/search", methods=["POST"])
 def search_photo():
+    t_start = time.time()
     try:
         data = request.get_json()
         if not data or "query" not in data:
@@ -120,23 +163,29 @@ def search_photo():
         query = data["query"]
 
         # Get embedding for the search query
+        t_embed = time.time()
         embedding = get_embedding(query)
+        logger.info(f"Search embedding took {time.time() - t_embed:.1f}s")
         if not embedding:
             return jsonify({"status": "error", "message": "Failed to generate query embedding"}), 500
 
         max_results = config.get("search_max_results", 10)
         matches = search_photos(embedding, n_results=max_results)
 
-        logger.info(f"Search for '{query}' returned {len(matches)} results")
-        return jsonify({"status": "ok", "results": matches})
+        elapsed = time.time() - t_start
+        logger.info(f"POST /search completed in {elapsed:.1f}s — "
+                    f"query='{query}', {len(matches)} results")
+        return jsonify({"status": "ok", "results": matches, "elapsed": round(elapsed, 2)})
 
     except Exception as e:
-        logger.exception(f"Error searching: {e}")
+        elapsed = time.time() - t_start
+        logger.exception(f"POST /search failed in {elapsed:.1f}s: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @api.route("/settings", methods=["POST"])
 def update_settings():
+    t_start = time.time()
     try:
         data = request.get_json()
         if not data:
@@ -171,12 +220,16 @@ def update_settings():
         if folder_changed:
             init_chromadb()
 
-        logger.info(f"Settings updated: vision={get_vision_model_label()}, "
-                     f"embed={get_embed_model_label()}, folder={config['index_folder']}")
+        elapsed = time.time() - t_start
+        logger.info(f"POST /settings completed in {elapsed:.1f}s — "
+                    f"vision={get_vision_model_label()}, "
+                    f"embed={get_embed_model_label()}, "
+                    f"folder={config['index_folder']}")
         return jsonify({"status": "ok", "config": {
             k: v for k, v in config.items() if "api_key" not in k
         }})
 
     except Exception as e:
-        logger.exception(f"Error updating settings: {e}")
+        elapsed = time.time() - t_start
+        logger.exception(f"POST /settings failed in {elapsed:.1f}s: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
