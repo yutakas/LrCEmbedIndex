@@ -55,7 +55,7 @@ LrCEmbedIndex/
 - Adobe Lightroom Classic
 - **For Ollama mode:** [Ollama](https://ollama.ai/) running with models pulled:
   - `qwen3.5` (vision) and `nomic-embed-text` (embedding), or your preferred models
-- **For OpenAI mode:** An OpenAI API key
+- **For OpenAI mode:** An OpenAI API key ([get one here](https://platform.openai.com/api-keys))
 
 ## Setup
 

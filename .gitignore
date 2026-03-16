@@ -29,4 +29,3 @@ lrcembedindex_config.json
 # Secrets
 .env
 
-OpenAI_API_Key.txt
