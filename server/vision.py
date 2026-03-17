@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 def describe_image(image_path_on_disk):
     if config["vision_mode"] == "openai":
         return _describe_image_openai(image_path_on_disk)
+    if config["vision_mode"] == "claude":
+        return _describe_image_claude(image_path_on_disk)
     return _describe_image_ollama(image_path_on_disk)
 
 
@@ -71,3 +73,43 @@ def _describe_image_openai(image_path_on_disk):
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
+
+
+def _describe_image_claude(image_path_on_disk):
+    with open(image_path_on_disk, "rb") as f:
+        image_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    api_key = config["claude_vision_api_key"]
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": config["claude_vision_model"],
+        "max_tokens": 1024,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Describe this image in detail. Include subjects, actions, colors, composition, and any text visible.",
+                    },
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": image_b64,
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    resp = requests.post("https://api.anthropic.com/v1/messages",
+                         headers=headers, json=payload, timeout=300)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["content"][0]["text"]

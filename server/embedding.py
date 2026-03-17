@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 def get_embedding(text):
     if config["embed_mode"] == "openai":
         return _get_embedding_openai(text)
+    if config["embed_mode"] == "voyage":
+        return _get_embedding_voyage(text)
     return _get_embedding_ollama(text)
 
 
@@ -36,6 +38,24 @@ def _get_embedding_openai(text):
         "input": text,
     }
     resp = requests.post("https://api.openai.com/v1/embeddings",
+                         headers=headers, json=payload, timeout=300)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["data"][0]["embedding"]
+
+
+def _get_embedding_voyage(text):
+    api_key = config["voyage_embed_api_key"]
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": config["voyage_embed_model"],
+        "input": [text],
+        "input_type": "document",
+    }
+    resp = requests.post("https://api.voyageai.com/v1/embeddings",
                          headers=headers, json=payload, timeout=300)
     resp.raise_for_status()
     data = resp.json()

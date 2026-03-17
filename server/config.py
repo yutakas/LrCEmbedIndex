@@ -16,6 +16,8 @@ config = {
     "ollama_vision_model": "qwen3.5",
     "openai_vision_api_key": "",
     "openai_vision_model": "gpt-4o",
+    "claude_vision_api_key": "",
+    "claude_vision_model": "claude-sonnet-4-6",
 
     # Embedding model settings
     "embed_mode": "ollama",
@@ -23,6 +25,8 @@ config = {
     "ollama_embed_model": "nomic-embed-text",
     "openai_embed_api_key": "",
     "openai_embed_model": "text-embedding-3-small",
+    "voyage_embed_api_key": "",
+    "voyage_embed_model": "voyage-3.5",
 
     # Search settings
     "search_max_results": 10,
@@ -33,12 +37,16 @@ config = {
 def get_vision_model_label():
     if config["vision_mode"] == "openai":
         return f"openai:{config['openai_vision_model']}"
+    if config["vision_mode"] == "claude":
+        return f"claude:{config['claude_vision_model']}"
     return f"ollama:{config['ollama_vision_model']}"
 
 
 def get_embed_model_label():
     if config["embed_mode"] == "openai":
         return f"openai:{config['openai_embed_model']}"
+    if config["embed_mode"] == "voyage":
+        return f"voyage:{config['voyage_embed_model']}"
     return f"ollama:{config['ollama_embed_model']}"
 
 

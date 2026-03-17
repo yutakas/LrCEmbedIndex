@@ -287,13 +287,15 @@ def update_settings():
 
         # Vision settings
         for key in ("vision_mode", "ollama_vision_endpoint", "ollama_vision_model",
-                     "openai_vision_api_key"):
+                     "openai_vision_api_key", "openai_vision_model",
+                     "claude_vision_api_key", "claude_vision_model"):
             if key in data:
                 config[key] = data[key]
 
         # Embedding settings
         for key in ("embed_mode", "ollama_embed_endpoint", "ollama_embed_model",
-                     "openai_embed_api_key"):
+                     "openai_embed_api_key", "openai_embed_model",
+                     "voyage_embed_api_key", "voyage_embed_model"):
             if key in data:
                 config[key] = data[key]
 
