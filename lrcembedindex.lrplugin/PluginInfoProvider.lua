@@ -20,12 +20,14 @@ local function sectionsForTopOfDialog( f, propertyTable )
     if not prefs.ollamaVisionEndpoint then prefs.ollamaVisionEndpoint = "http://localhost:11434" end
     if not prefs.ollamaVisionModel then prefs.ollamaVisionModel = "qwen3.5" end
     if not prefs.openaiVisionApiKey then prefs.openaiVisionApiKey = "" end
+    if not prefs.openaiVisionModel then prefs.openaiVisionModel = "gpt-4o" end
 
     -- Embedding settings
     if not prefs.embedMode then prefs.embedMode = "ollama" end
     if not prefs.ollamaEmbedEndpoint then prefs.ollamaEmbedEndpoint = "http://localhost:11434" end
     if not prefs.ollamaEmbedModel then prefs.ollamaEmbedModel = "nomic-embed-text" end
     if not prefs.openaiEmbedApiKey then prefs.openaiEmbedApiKey = "" end
+    if not prefs.openaiEmbedModel then prefs.openaiEmbedModel = "text-embedding-3-small" end
 
     -- Search settings
     if not prefs.searchMaxResults then prefs.searchMaxResults = 10 end
@@ -41,11 +43,13 @@ local function sectionsForTopOfDialog( f, propertyTable )
     propertyTable.ollamaVisionEndpoint = prefs.ollamaVisionEndpoint
     propertyTable.ollamaVisionModel = prefs.ollamaVisionModel
     propertyTable.openaiVisionApiKey = prefs.openaiVisionApiKey
+    propertyTable.openaiVisionModel = prefs.openaiVisionModel
 
     propertyTable.embedMode = prefs.embedMode
     propertyTable.ollamaEmbedEndpoint = prefs.ollamaEmbedEndpoint
     propertyTable.ollamaEmbedModel = prefs.ollamaEmbedModel
     propertyTable.openaiEmbedApiKey = prefs.openaiEmbedApiKey
+    propertyTable.openaiEmbedModel = prefs.openaiEmbedModel
 
     -- Visibility helpers
     propertyTable:addObserver( 'visionMode', function( props, key, value )
@@ -210,6 +214,19 @@ local function sectionsForTopOfDialog( f, propertyTable )
                     width_in_chars = 40,
                 },
             },
+
+            f:row {
+                visible = LrView.bind { key = 'visionIsOpenai', object = propertyTable },
+                f:static_text {
+                    title = "Vision Model Name:",
+                    alignment = 'right',
+                    width = LrView.share 'label_width',
+                },
+                f:edit_field {
+                    value = LrView.bind { key = 'openaiVisionModel', object = propertyTable },
+                    width_in_chars = 30,
+                },
+            },
         },
 
         -- Embedding Model Settings
@@ -273,6 +290,19 @@ local function sectionsForTopOfDialog( f, propertyTable )
                     width_in_chars = 40,
                 },
             },
+
+            f:row {
+                visible = LrView.bind { key = 'embedIsOpenai', object = propertyTable },
+                f:static_text {
+                    title = "Embed Model Name:",
+                    alignment = 'right',
+                    width = LrView.share 'label_width',
+                },
+                f:edit_field {
+                    value = LrView.bind { key = 'openaiEmbedModel', object = propertyTable },
+                    width_in_chars = 30,
+                },
+            },
         },
 
         -- Save button
@@ -293,11 +323,13 @@ local function sectionsForTopOfDialog( f, propertyTable )
                         prefs.ollamaVisionEndpoint = propertyTable.ollamaVisionEndpoint
                         prefs.ollamaVisionModel = propertyTable.ollamaVisionModel
                         prefs.openaiVisionApiKey = propertyTable.openaiVisionApiKey
+                        prefs.openaiVisionModel = propertyTable.openaiVisionModel
 
                         prefs.embedMode = propertyTable.embedMode
                         prefs.ollamaEmbedEndpoint = propertyTable.ollamaEmbedEndpoint
                         prefs.ollamaEmbedModel = propertyTable.ollamaEmbedModel
                         prefs.openaiEmbedApiKey = propertyTable.openaiEmbedApiKey
+                        prefs.openaiEmbedModel = propertyTable.openaiEmbedModel
 
                         -- Send all settings to the Python server
                         local payload = json.encode({
@@ -307,11 +339,13 @@ local function sectionsForTopOfDialog( f, propertyTable )
                             ollama_vision_endpoint = propertyTable.ollamaVisionEndpoint,
                             ollama_vision_model = propertyTable.ollamaVisionModel,
                             openai_vision_api_key = propertyTable.openaiVisionApiKey,
+                            openai_vision_model = propertyTable.openaiVisionModel,
 
                             embed_mode = propertyTable.embedMode,
                             ollama_embed_endpoint = propertyTable.ollamaEmbedEndpoint,
                             ollama_embed_model = propertyTable.ollamaEmbedModel,
                             openai_embed_api_key = propertyTable.openaiEmbedApiKey,
+                            openai_embed_model = propertyTable.openaiEmbedModel,
 
                             search_max_results = propertyTable.searchMaxResults,
                             search_relevance = propertyTable.searchRelevance,

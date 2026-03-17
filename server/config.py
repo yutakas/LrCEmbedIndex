@@ -15,12 +15,14 @@ config = {
     "ollama_vision_endpoint": "http://localhost:11434",
     "ollama_vision_model": "qwen3.5",
     "openai_vision_api_key": "",
+    "openai_vision_model": "gpt-4o",
 
     # Embedding model settings
     "embed_mode": "ollama",
     "ollama_embed_endpoint": "http://localhost:11434",
     "ollama_embed_model": "nomic-embed-text",
     "openai_embed_api_key": "",
+    "openai_embed_model": "text-embedding-3-small",
 
     # Search settings
     "search_max_results": 10,
@@ -30,13 +32,13 @@ config = {
 
 def get_vision_model_label():
     if config["vision_mode"] == "openai":
-        return "openai:gpt-4o"
+        return f"openai:{config['openai_vision_model']}"
     return f"ollama:{config['ollama_vision_model']}"
 
 
 def get_embed_model_label():
     if config["embed_mode"] == "openai":
-        return "openai:text-embedding-3-small"
+        return f"openai:{config['openai_embed_model']}"
     return f"ollama:{config['ollama_embed_model']}"
 
 

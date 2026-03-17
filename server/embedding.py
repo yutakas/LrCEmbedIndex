@@ -32,7 +32,7 @@ def _get_embedding_openai(text):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "text-embedding-3-small",
+        "model": config["openai_embed_model"],
         "input": text,
     }
     resp = requests.post("https://api.openai.com/v1/embeddings",

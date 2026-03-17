@@ -46,7 +46,7 @@ def _describe_image_openai(image_path_on_disk):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "gpt-4o",
+        "model": config["openai_vision_model"],
         "messages": [
             {
                 "role": "user",
