@@ -123,19 +123,41 @@ local function describePhoto()
             return
         end
 
-        local desc = data.description or "(no description)"
-        local model = data.vision_model or "unknown"
+        local descriptions = data.descriptions or {}
         local elapsed = data.elapsed or 0
         local cached = data.cached or false
-        local cachedAt = data.cached_at or ""
 
-        local header = "Model: " .. model .. "  (" .. string.format( "%.1f", elapsed ) .. "s)"
+        if #descriptions == 0 then
+            LrDialogs.message( "Photo Description — " .. fileName,
+                "(no description available)", "info" )
+            return
+        end
+
+        -- Build display text with all available descriptions
+        local parts = {}
         if cached then
-            header = header .. "\n[Cached from " .. cachedAt .. "]"
+            table.insert( parts, string.format( "%d cached model(s), %.1fs\n", #descriptions, elapsed ) )
+        else
+            table.insert( parts, string.format( "New description generated, %.1fs\n", elapsed ) )
+        end
+
+        for i, entry in ipairs( descriptions ) do
+            local model = entry.vision_model or "unknown"
+            local processedAt = entry.processed_at or ""
+            local desc = entry.vision_description or "(no description)"
+
+            if i > 1 then
+                table.insert( parts, "\n————————————————————————————————\n\n" )
+            end
+            table.insert( parts, "Model: " .. model )
+            if processedAt ~= "" then
+                table.insert( parts, "  (" .. processedAt .. ")" )
+            end
+            table.insert( parts, "\n\n" .. desc .. "\n" )
         end
 
         LrDialogs.message( "Photo Description — " .. fileName,
-            header .. "\n\n" .. desc,
+            table.concat( parts ),
             "info" )
     end )
 end

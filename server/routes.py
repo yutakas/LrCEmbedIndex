@@ -25,7 +25,7 @@ api = Blueprint("api", __name__)
 
 @api.route("/describe", methods=["POST"])
 def describe_photo():
-    """Vision-only endpoint: describe a single photo, using cached metadata if available."""
+    """Vision-only endpoint: return all cached descriptions, or call API if none exist."""
     t_start = time.time()
     try:
         image_path = request.headers.get("X-Image-Path", "")
@@ -44,28 +44,35 @@ def describe_photo():
 
         vision_label = get_vision_model_label()
 
-        # Check cached metadata first
+        # Check cached metadata — return ALL cached descriptions if any exist
         existing = load_photo_metadata(image_path) if image_path else None
-        cached_vision = get_vision_result(existing, vision_label) if existing else None
+        vision_results = existing.get("vision_results", {}) if existing else {}
 
-        if cached_vision and cached_vision.get("full_description"):
-            full_description = cached_vision["full_description"]
-            vision_description = cached_vision["vision_description"]
-            cached_at = cached_vision.get("processed_at", "unknown")
-            elapsed = time.time() - t_start
-            logger.info(f"POST /describe completed in {elapsed:.1f}s — "
-                        f"{image_path} (cached from {cached_at})")
-            return jsonify({
-                "status": "ok",
-                "description": full_description,
-                "vision_description": vision_description,
-                "vision_model": vision_label,
-                "cached": True,
-                "cached_at": cached_at,
-                "elapsed": round(elapsed, 2),
-            })
+        if vision_results:
+            # Build list of all cached descriptions
+            descriptions = []
+            for model_label, v_data in vision_results.items():
+                desc = v_data.get("vision_description")
+                if desc:
+                    descriptions.append({
+                        "vision_model": model_label,
+                        "vision_description": desc,
+                        "full_description": v_data.get("full_description", desc),
+                        "processed_at": v_data.get("processed_at", "unknown"),
+                    })
 
-        # No cache — call vision model
+            if descriptions:
+                elapsed = time.time() - t_start
+                logger.info(f"POST /describe completed in {elapsed:.1f}s — "
+                            f"{image_path} ({len(descriptions)} cached model(s))")
+                return jsonify({
+                    "status": "ok",
+                    "descriptions": descriptions,
+                    "cached": True,
+                    "elapsed": round(elapsed, 2),
+                })
+
+        # No cache at all — call vision model with current settings
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
@@ -84,13 +91,23 @@ def describe_photo():
             else:
                 full_description = vision_description
 
+            # Cache the result in metadata
+            if image_path:
+                meta = existing or {}
+                set_vision_result(meta, vision_label, vision_description,
+                                  exif_data, full_description)
+                save_photo_metadata(image_path, meta)
+
             elapsed = time.time() - t_start
             logger.info(f"POST /describe completed in {elapsed:.1f}s — {image_path}")
             return jsonify({
                 "status": "ok",
-                "description": full_description,
-                "vision_description": vision_description,
-                "vision_model": vision_label,
+                "descriptions": [{
+                    "vision_model": vision_label,
+                    "vision_description": vision_description,
+                    "full_description": full_description,
+                    "processed_at": "just now",
+                }],
                 "cached": False,
                 "elapsed": round(elapsed, 2),
             })
