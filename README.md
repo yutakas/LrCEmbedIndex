@@ -1,12 +1,12 @@
 # LrCEmbedIndex
 
-A Lightroom Classic plugin and Python server for AI-powered photo indexing and semantic search. Supports both **Ollama** (local) and **OpenAI API** backends for vision and embedding models.
+A Lightroom Classic plugin and Python server for AI-powered photo indexing and semantic search. Supports **Ollama** (local), **OpenAI**, and **Claude/Voyage AI** backends for vision and embedding models.
 
 ## Overview
 
 - **Lightroom Classic Plugin** generates JPEG thumbnails and extracts EXIF metadata from your photo library, sending them to a local Python server.
 - **Python Server** describes each photo using a vision model, generates vector embeddings, and stores everything in ChromaDB for fast semantic search.
-- **Dual backend support** — toggle between Ollama and OpenAI independently for vision and embedding.
+- **Multi-backend support** — choose between Ollama, OpenAI, and Claude for vision; Ollama, OpenAI, and Voyage AI for embedding. Vision and embedding backends can be mixed independently.
 
 ## Architecture
 
@@ -22,9 +22,9 @@ Lightroom Classic
                                    │
                          ┌─────────┼─────────┐
                          ▼         ▼         ▼
-                  Ollama/OpenAI  ChromaDB   Metadata
-                  (vision +      (per-model  (sharded
-                   embed)        vector DB)  JSON files)
+               Ollama/OpenAI/ ChromaDB   Metadata
+               Claude/Voyage  (per-model  (sharded
+               (vision+embed) vector DB)  JSON files)
 ```
 
 ## Project Structure
@@ -43,8 +43,8 @@ LrCEmbedIndex/
 │   ├── server.py                # Flask app entry point
 │   ├── routes.py                # API route handlers
 │   ├── config.py                # Configuration management
-│   ├── vision.py                # Vision model integration (Ollama/OpenAI)
-│   ├── embedding.py             # Embedding model integration (Ollama/OpenAI)
+│   ├── vision.py                # Vision model integration (Ollama/OpenAI/Claude)
+│   ├── embedding.py             # Embedding model integration (Ollama/OpenAI/Voyage AI)
 │   ├── vectorstore.py           # ChromaDB vector store with relevance filtering
 │   ├── metadata.py              # Sharded JSON metadata storage
 │   ├── helpers.py               # EXIF-to-text conversion, utilities
@@ -60,6 +60,8 @@ LrCEmbedIndex/
 - **For Ollama mode:** [Ollama](https://ollama.ai/) running with models pulled:
   - `qwen3.5` (vision) and `nomic-embed-text` (embedding), or your preferred models
 - **For OpenAI mode:** An OpenAI API key ([get one here](https://platform.openai.com/api-keys))
+- **For Claude mode:** An Anthropic API key ([get one here](https://console.anthropic.com/settings/keys))
+- **For Voyage AI mode:** A Voyage AI API key ([get one here](https://dash.voyageai.com/api-keys))
 
 ## Setup
 
@@ -94,14 +96,16 @@ The server runs on port 8600 by default.
    - **Relevance Threshold** — slider (0–100) controlling how strict the relevance filter is
 
    **Vision Model:**
-   - Toggle between **Ollama** and **OpenAI API**
+   - Choose between **Ollama**, **OpenAI API**, or **Claude API**
    - Ollama: endpoint URL + model name (default: `qwen3.5`)
-   - OpenAI: API key (uses `gpt-4o`)
+   - OpenAI: API key + model name (default: `gpt-4o`)
+   - Claude: API key + model name (default: `claude-sonnet-4-6`)
 
    **Embedding Model:**
-   - Toggle between **Ollama** and **OpenAI API**
+   - Choose between **Ollama**, **OpenAI API**, or **Voyage AI**
    - Ollama: endpoint URL + model name (default: `nomic-embed-text`)
-   - OpenAI: API key (uses `text-embedding-3-small`)
+   - OpenAI: API key + model name (default: `text-embedding-3-small`)
+   - Voyage AI: API key + model name (default: `voyage-3.5`)
 
 5. Click **Save & Apply Settings**
 
@@ -170,7 +174,8 @@ Metadata is stored in a sharded folder structure to handle 10,000+ photos effici
 │   └── ...                          # up to 256 shard directories
 ├── chromadb/
 │   ├── ollama_nomic-embed-text/     # ChromaDB for Ollama embeddings
-│   └── openai_text-embedding-3-small/  # ChromaDB for OpenAI embeddings
+│   ├── openai_text-embedding-3-small/  # ChromaDB for OpenAI embeddings
+│   └── voyage_voyage-3.5/          # ChromaDB for Voyage AI embeddings
 └── lrcembedindex_config.json        # server config
 ```
 
@@ -204,6 +209,26 @@ Key fields:
 - Indexing skips the vision API call if the same vision model result is cached
 - Indexing skips the embedding API call if the same vision+embed pair is cached
 - ChromaDB is always updated to stay in sync with the current model pair
+
+## Available Models
+
+All model names are configurable in the plugin settings UI. Here are reference links to find available models for each provider:
+
+### Vision Models
+
+| Provider | Default Model | Model List |
+|----------|--------------|------------|
+| Ollama | `qwen3.5` | [Ollama Library](https://ollama.com/library) — filter by "vision" capability |
+| OpenAI | `gpt-4o` | [OpenAI Models](https://platform.openai.com/docs/models) — look for models with "vision" or "image input" support |
+| Claude | `claude-sonnet-4-6` | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models) — all Claude 3+ models support vision |
+
+### Embedding Models
+
+| Provider | Default Model | Model List |
+|----------|--------------|------------|
+| Ollama | `nomic-embed-text` | [Ollama Library](https://ollama.com/library) — filter by "embedding" capability |
+| OpenAI | `text-embedding-3-small` | [OpenAI Embeddings](https://platform.openai.com/docs/guides/embeddings#embedding-models) |
+| Voyage AI | `voyage-3.5` | [Voyage AI Models](https://docs.voyageai.com/docs/embeddings) — includes domain-specific models for code, law, and finance |
 
 ## License
 
