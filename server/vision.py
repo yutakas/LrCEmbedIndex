@@ -4,6 +4,7 @@ import logging
 import requests
 
 from config import config
+from ollama_lock import ollama_lock
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ def _describe_image_ollama(image_path_on_disk):
         ],
         "stream": False,
     }
-    resp = requests.post(url, json=payload, timeout=300)
+    with ollama_lock:
+        resp = requests.post(url, json=payload, timeout=300)
     resp.raise_for_status()
     data = resp.json()
     return data.get("message", {}).get("content", "")
