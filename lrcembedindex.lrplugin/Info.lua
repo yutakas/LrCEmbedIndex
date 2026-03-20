@@ -9,6 +9,10 @@ return {
             file = "GenerateIndex.lua",
         },
         {
+            title = "Batch Describe (Vision Only)",
+            file = "BatchDescribe.lua",
+        },
+        {
             title = "Search Photo",
             file = "SearchPhoto.lua",
         },
