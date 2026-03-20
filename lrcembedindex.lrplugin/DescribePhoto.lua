@@ -106,7 +106,7 @@ local function describePhoto()
             function() return thumbnailPixels end,
             headers,
             "POST",
-            300,
+            1000,
             string.len( thumbnailPixels )
         )
 

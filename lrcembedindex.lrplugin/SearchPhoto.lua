@@ -170,7 +170,7 @@ local function searchPhoto()
                     payload,
                     headers,
                     "POST",
-                    300
+                    1000
                 )
 
                 if not response then

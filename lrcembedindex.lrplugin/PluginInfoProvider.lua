@@ -434,7 +434,7 @@ local function sectionsForTopOfDialog( f, propertyTable )
                             payload,
                             headers,
                             "POST",
-                            10
+                            1000
                         )
                         if response then
                             LrDialogs.message( "Settings Saved", "Settings have been sent to the server.", "info" )
