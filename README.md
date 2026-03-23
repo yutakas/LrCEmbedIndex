@@ -34,6 +34,7 @@ LrCEmbedIndex/
 ├── lrcembedindex.lrplugin/
 │   ├── Info.lua                 # Plugin manifest
 │   ├── GenerateIndex.lua        # Menu: index all photos in selected folder
+│   ├── BatchDescribe.lua        # Menu: vision-only batch processing
 │   ├── SearchPhoto.lua          # Menu: semantic search with collection results
 │   ├── DescribePhoto.lua        # Menu: describe a single selected photo
 │   ├── ShowStats.lua            # Menu: show ChromaDB & metadata statistics
@@ -48,9 +49,16 @@ LrCEmbedIndex/
 │   ├── vectorstore.py           # ChromaDB vector store with relevance filtering
 │   ├── metadata.py              # Sharded JSON metadata storage
 │   ├── helpers.py               # EXIF-to-text conversion, utilities
-│   └── requirements.txt         # Python dependencies
+│   ├── ollama_lock.py           # Threading lock for Ollama call serialization
+│   ├── requirements.txt         # Python dependencies
+│   └── requirements-lock.txt    # Pinned dependency versions
+├── .github/workflows/lint.yml  # CI: Python linting
 ├── README.md
-└── LICENSE
+├── LICENSE
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+└── SECURITY.md
 ```
 
 ## Prerequisites
@@ -229,6 +237,18 @@ All model names are configurable in the plugin settings UI. Here are reference l
 | Ollama | `nomic-embed-text` | [Ollama Library](https://ollama.com/library) — filter by "embedding" capability |
 | OpenAI | `text-embedding-3-small` | [OpenAI Embeddings](https://platform.openai.com/docs/guides/embeddings#embedding-models) |
 | Voyage AI | `voyage-3.5` | [Voyage AI Models](https://docs.voyageai.com/docs/embeddings) — includes domain-specific models for code, law, and finance |
+
+## Privacy Notice
+
+- **Ollama (default):** All processing is entirely local. No photo data leaves your machine.
+- **OpenAI / Claude / Voyage AI:** When using cloud backends, your photo images (for vision) and/or description text (for embedding) are transmitted to third-party API servers. Review each provider's data handling policies:
+  - [OpenAI Usage Policies](https://openai.com/policies/usage-policies)
+  - [Anthropic Usage Policy](https://www.anthropic.com/policies/usage-policy)
+  - [Voyage AI Terms of Service](https://www.voyageai.com/terms-of-service)
+- **Local storage only:** All metadata, embeddings, and configuration are stored locally on your machine. No telemetry or analytics are collected.
+- **API keys** are stored in Lightroom plugin preferences and kept in-memory on the server. They are never written to config files on disk.
+
+Users are responsible for complying with the terms of service of their chosen API providers.
 
 ## License
 

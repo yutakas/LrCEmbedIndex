@@ -214,6 +214,22 @@ local function sectionsForTopOfDialog( f, propertyTable )
                 },
             },
 
+            -- Cloud API notice
+            f:row {
+                visible = LrView.bind {
+                    keys = { 'visionIsOpenai', 'visionIsClaude' },
+                    operation = function( binder, values, fromTable )
+                        return values.visionIsOpenai or values.visionIsClaude
+                    end,
+                    object = propertyTable,
+                },
+                f:static_text {
+                    title = "Note: Cloud backends send photo images to third-party API servers. See README for details.",
+                    text_color = LrView.kTextColor,
+                    width = 500,
+                },
+            },
+
             -- OpenAI vision fields
             f:row {
                 visible = LrView.bind { key = 'visionIsOpenai', object = propertyTable },
@@ -315,6 +331,22 @@ local function sectionsForTopOfDialog( f, propertyTable )
                 f:edit_field {
                     value = LrView.bind { key = 'ollamaEmbedModel', object = propertyTable },
                     width_in_chars = 30,
+                },
+            },
+
+            -- Cloud API notice
+            f:row {
+                visible = LrView.bind {
+                    keys = { 'embedIsOpenai', 'embedIsVoyage' },
+                    operation = function( binder, values, fromTable )
+                        return values.embedIsOpenai or values.embedIsVoyage
+                    end,
+                    object = propertyTable,
+                },
+                f:static_text {
+                    title = "Note: Cloud backends send description text to third-party API servers. See README for details.",
+                    text_color = LrView.kTextColor,
+                    width = 500,
                 },
             },
 
