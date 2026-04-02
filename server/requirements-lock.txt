@@ -1,6 +1,8 @@
 # Pinned dependency versions for reproducible installs.
 # Generated from requirements.txt minimum versions.
-# Update by running: pip freeze | grep -iE "flask|requests|chromadb" > requirements-lock.txt
+# Update by running: pip freeze | grep -iE "flask|requests|chromadb|pillow|rawpy" > requirements-lock.txt
 Flask==3.0.0
 requests==2.31.0
 chromadb==0.5.0
+Pillow==12.2.0
+rawpy==0.26.1

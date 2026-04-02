@@ -253,3 +253,5 @@ Users are responsible for complying with the terms of service of their chosen AP
 ## License
 
 MIT
+
+This project includes [dkjson](http://dkolf.de/dkjson-lua/) by David Heiko Kolf, licensed under MIT.
