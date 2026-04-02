@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Migrate ChromaDB document IDs from path-based to SHA-256 content hashes.
+"""Migrate ChromaDB document IDs and JSON metadata from path-based to SHA-256 content hashes.
+
+Updates both ChromaDB entries (new document IDs) and JSON metadata files
+(adds content_hash field) so cached vision/embedding results can be looked
+up by content hash after photos are moved.
 
 Usage:
+    python migrate_to_content_hash.py --index-folder /path/to/index
+    python migrate_to_content_hash.py --index-folder /path/to/index --dry-run
     python migrate_to_content_hash.py --chroma-path /path/to/chromadb/model_dir
-    python migrate_to_content_hash.py --index-folder /path/to/index   # all model stores
-    python migrate_to_content_hash.py --chroma-path /path/to/dir --dry-run
 """
 
 import argparse
 import hashlib
+import json
 import logging
 import os
 import sys
@@ -33,7 +38,44 @@ def compute_content_hash(file_path, chunk_size=65536):
     return f"sha256:{sha256.hexdigest()}"
 
 
-def migrate_collection(collection, dry_run=False):
+def metadata_path_for_image(metadata_dir, image_path):
+    """Compute the sharded metadata JSON path for a given image path."""
+    md5 = hashlib.md5(image_path.encode("utf-8")).hexdigest()
+    return os.path.join(metadata_dir, md5[:2], f"{md5}.json")
+
+
+def update_metadata_json(metadata_dir, image_path, content_hash, dry_run=False):
+    """Add content_hash to the JSON metadata file for an image."""
+    meta_path = metadata_path_for_image(metadata_dir, image_path)
+    if not os.path.exists(meta_path):
+        return False
+
+    try:
+        with open(meta_path, "r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"  Failed to read metadata {meta_path}: {e}")
+        return False
+
+    if data.get("content_hash") == content_hash:
+        return True  # already up to date
+
+    if dry_run:
+        logger.info(f"  [DRY RUN] Would add content_hash to {meta_path}")
+        return True
+
+    data["content_hash"] = content_hash
+    try:
+        with open(meta_path, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError as e:
+        logger.warning(f"  Failed to write metadata {meta_path}: {e}")
+        return False
+
+    return True
+
+
+def migrate_collection(collection, dry_run=False, metadata_dir=None):
     """Migrate all path-based IDs in a collection to content hashes."""
     total = collection.count()
     if total == 0:
@@ -55,15 +97,17 @@ def migrate_collection(collection, dry_run=False):
             break
 
         for i, doc_id in enumerate(batch["ids"]):
-            # Skip already-migrated entries
+            metadata = batch["metadatas"][i] if batch["metadatas"] is not None else {}
+            image_path = metadata.get("path", "")
+
+            # Skip already-migrated entries (but still update metadata JSON if needed)
             if doc_id.startswith("sha256:"):
+                if metadata_dir and image_path:
+                    update_metadata_json(metadata_dir, image_path, doc_id, dry_run=dry_run)
                 skipped += 1
                 continue
-
-            metadata = batch["metadatas"][i] if batch["metadatas"] else {}
-            image_path = metadata.get("path", "")
-            embedding = batch["embeddings"][i] if batch["embeddings"] else None
-            document = batch["documents"][i] if batch["documents"] else ""
+            embedding = batch["embeddings"][i] if batch["embeddings"] is not None else None
+            document = batch["documents"][i] if batch["documents"] is not None else ""
 
             if not image_path:
                 logger.warning(f"  No path in metadata for ID '{doc_id}', skipping.")
@@ -87,6 +131,8 @@ def migrate_collection(collection, dry_run=False):
 
             if dry_run:
                 logger.info(f"  [DRY RUN] {doc_id} -> {new_id}")
+                if metadata_dir:
+                    update_metadata_json(metadata_dir, image_path, new_id, dry_run=True)
                 migrated += 1
                 continue
 
@@ -100,6 +146,11 @@ def migrate_collection(collection, dry_run=False):
                 metadatas=[new_metadata],
             )
             collection.delete(ids=[doc_id])
+
+            # Update JSON metadata file
+            if metadata_dir:
+                update_metadata_json(metadata_dir, image_path, new_id)
+
             migrated += 1
             logger.info(f"  Migrated: {os.path.basename(image_path)} -> {new_id[:20]}...")
 
@@ -108,7 +159,7 @@ def migrate_collection(collection, dry_run=False):
     return migrated, skipped, errors
 
 
-def migrate_store(chroma_path, dry_run=False):
+def migrate_store(chroma_path, dry_run=False, metadata_dir=None):
     """Migrate a single ChromaDB store directory."""
     logger.info(f"Opening ChromaDB store: {chroma_path}")
     client = chromadb.PersistentClient(path=chroma_path)
@@ -118,7 +169,7 @@ def migrate_store(chroma_path, dry_run=False):
     )
     total = collection.count()
     logger.info(f"  Collection 'photo_index' has {total} entries")
-    return migrate_collection(collection, dry_run=dry_run)
+    return migrate_collection(collection, dry_run=dry_run, metadata_dir=metadata_dir)
 
 
 def main():
@@ -136,6 +187,7 @@ def main():
         logger.info("=== DRY RUN MODE — no changes will be made ===\n")
 
     stores = []
+    metadata_dir = None
     if args.chroma_path:
         stores.append(args.chroma_path)
     else:
@@ -147,6 +199,12 @@ def main():
             store_path = os.path.join(chroma_base, name)
             if os.path.isdir(store_path):
                 stores.append(store_path)
+        metadata_dir = os.path.join(args.index_folder, "metadata")
+        if os.path.isdir(metadata_dir):
+            logger.info(f"Will also update JSON metadata in: {metadata_dir}")
+        else:
+            logger.info(f"No metadata directory found at {metadata_dir}, skipping JSON updates")
+            metadata_dir = None
 
     if not stores:
         logger.error("No ChromaDB stores found to migrate.")
@@ -157,7 +215,8 @@ def main():
     total_errors = 0
 
     for store_path in stores:
-        migrated, skipped, errors = migrate_store(store_path, dry_run=args.dry_run)
+        migrated, skipped, errors = migrate_store(store_path, dry_run=args.dry_run,
+                                                  metadata_dir=metadata_dir)
         total_migrated += migrated
         total_skipped += skipped
         total_errors += errors
