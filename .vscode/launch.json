@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug server.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/server/server.py",
+            "cwd": "${workspaceFolder}/server",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "FLASK_ENV": "development"
+            }
+        },
+        {
+            "name": "Debug scan_and_index.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/server/scan_and_index.py",
+            "cwd": "${workspaceFolder}/server",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "/path/to/photos",
+                "--index-folder", "/path/to/index",
+                "--vision-mode", "ollama",
+                "--ollama-vision-model", "qwen3.5",
+                "--embed-mode", "ollama",
+                "--ollama-embed-model", "nomic-embed-text"
+            ]
+        }
+    ]
+}
