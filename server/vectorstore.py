@@ -94,7 +94,7 @@ def upsert_photo(doc_id, embedding, description, image_path):
         ids=[doc_id],
         embeddings=[embedding],
         documents=[description],
-        metadatas=[{"path": image_path}],
+        metadatas=[{"path": image_path, "content_hash": doc_id}],
     )
 
 

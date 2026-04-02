@@ -31,3 +31,17 @@ def exif_to_text(exif_data):
 
 def sanitize_chroma_id(path):
     return path.replace("/", "__").replace("\\", "__").replace(" ", "_")
+
+
+def compute_content_hash(file_path, chunk_size=65536):
+    """Compute SHA-256 hash of file content, returned as 'sha256:<hex>'."""
+    import hashlib
+
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            sha256.update(chunk)
+    return f"sha256:{sha256.hexdigest()}"

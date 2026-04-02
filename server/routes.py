@@ -16,7 +16,7 @@ from metadata import (load_photo_metadata, save_photo_metadata,
 from vectorstore import init_chromadb, upsert_photo, search_photos, get_chromadb_stats
 from vision import describe_image
 from embedding import get_embedding
-from helpers import exif_to_text, sanitize_chroma_id
+from helpers import exif_to_text, compute_content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,14 @@ def index_photo():
 
             # Always upsert to ChromaDB — we don't know which model pair
             # produced the current entry, so keep it in sync
-            doc_id = sanitize_chroma_id(image_path)
+            try:
+                doc_id = compute_content_hash(image_path)
+            except FileNotFoundError:
+                return jsonify({"status": "error",
+                                "message": f"Original file not accessible: {image_path}"}), 400
+            except PermissionError:
+                return jsonify({"status": "error",
+                                "message": f"Permission denied reading: {image_path}"}), 403
             upsert_photo(doc_id, embedding, description, image_path)
 
             elapsed = time.time() - t_start
