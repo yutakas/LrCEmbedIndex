@@ -85,5 +85,6 @@ def load_config():
 
 def save_last_config_pointer():
     home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
+    safe = {k: v for k, v in config.items() if "api_key" not in k}
     with open(home_config, "w") as f:
-        json.dump(config, f, indent=2)
+        json.dump(safe, f, indent=2)
