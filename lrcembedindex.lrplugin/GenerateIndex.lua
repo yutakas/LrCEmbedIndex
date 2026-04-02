@@ -7,6 +7,7 @@ local LrPrefs = import 'LrPrefs'
 local LrLogger = import 'LrLogger'
 
 local json = require 'dkjson'
+local utils = require 'LrCEmbedUtils'
 
 local logger = LrLogger( 'LrCEmbedIndex' )
 logger:enable( "logfile" )
@@ -55,64 +56,13 @@ local function generateIndex()
             progress:setPortionComplete( i - 1, #allPhotos )
             progress:setCaption( "Processing photo " .. i .. " of " .. #allPhotos )
 
-            -- Request JPEG thumbnail
-            local thumbnailPixels = nil
-            local thumbnailErr = nil
-            local done = false
-
-            local width = photo:getRawMetadata( "width" )
-            local height = photo:getRawMetadata( "height" )
-            if width and height then
-                width = math.min( width / 2, 1024 )
-                height = math.min( height / 2, 1024 )
-            else
-                width = 1024
-                height = 1024
-            end
-
-            local request = photo:requestJpegThumbnail( width, height, function( pixels, errMsg )
-                thumbnailPixels = pixels
-                thumbnailErr = errMsg
-                done = true
-            end )
-
-            -- Wait for thumbnail (up to 30 seconds)
-            local waitCount = 0
-            while not done and waitCount < 300 do
-                LrTasks.sleep( 0.1 )
-                waitCount = waitCount + 1
-            end
+            local thumbnailPixels, thumbnailErr = utils.requestThumbnail( photo )
 
             if thumbnailPixels and not thumbnailErr then
                 local imagePath = photo:getRawMetadata( "path" ) or ""
 
-                -- Collect EXIF / metadata
-                local exifData = {}
-                exifData.cameraMake = photo:getFormattedMetadata( "cameraMake" ) or ""
-                exifData.cameraModel = photo:getFormattedMetadata( "cameraModel" ) or ""
-                exifData.lens = photo:getFormattedMetadata( "lens" ) or ""
-                exifData.focalLength = photo:getFormattedMetadata( "focalLength" ) or ""
-                exifData.aperture = photo:getFormattedMetadata( "aperture" ) or ""
-                exifData.shutterSpeed = photo:getFormattedMetadata( "shutterSpeed" ) or ""
-                exifData.isoSpeedRating = photo:getFormattedMetadata( "isoSpeedRating" ) or ""
-                exifData.exposureBias = photo:getFormattedMetadata( "exposureBias" ) or ""
-                exifData.dateTimeOriginal = photo:getFormattedMetadata( "dateTimeOriginal" ) or ""
-                exifData.gps = photo:getFormattedMetadata( "gps" ) or ""
-                exifData.fileName = photo:getFormattedMetadata( "fileName" ) or ""
-                exifData.fileType = photo:getFormattedMetadata( "fileType" ) or ""
-                exifData.dimensions = photo:getFormattedMetadata( "dimensions" ) or ""
-                exifData.title = photo:getFormattedMetadata( "title" ) or ""
-                exifData.caption = photo:getFormattedMetadata( "caption" ) or ""
-                exifData.keywords = photo:getFormattedMetadata( "keywordTags" ) or ""
-                exifData.label = photo:getFormattedMetadata( "label" ) or ""
-                exifData.rating = photo:getFormattedMetadata( "rating" ) or ""
-
-                local exifJson = json.encode( exifData )
-
-                -- Percent-encode JSON so special chars (quotes, backslashes in GPS etc.) survive HTTP headers
-                local exifEncoded = string.gsub( exifJson, "([^%w%-%.%_%~])", function( c )
-                    return string.format( "%%%02X", string.byte( c ) )
-                end )
+                local exifData = utils.collectExifData( photo )
+                local exifEncoded = utils.encodeExifHeader( exifData )
 
                 local headers = {
                     { field = 'Content-Type', value = 'image/jpeg' },
