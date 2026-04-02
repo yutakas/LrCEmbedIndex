@@ -339,6 +339,9 @@ def main():
                     skip_info += " (vision cached)"
                 if result.get("skipped_embed"):
                     skip_info += " (embed cached)"
+                desc_preview = result.get("description", "")[:100]
+                if desc_preview:
+                    logger.info(f"  {desc_preview}...")
                 logger.info(f"  OK in {result.get('elapsed', '?')}s{skip_info}")
                 success += 1
             else:
