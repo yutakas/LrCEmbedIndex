@@ -38,15 +38,19 @@ local function showStats()
         if cfg.vision_mode == "ollama" then
             table.insert( lines, "  Endpoint: " .. ( cfg.ollama_vision_endpoint or "?" ) )
             table.insert( lines, "  Model: " .. ( cfg.ollama_vision_model or "?" ) )
+        elseif cfg.vision_mode == "claude" then
+            table.insert( lines, "  Model: " .. ( cfg.claude_vision_model or "?" ) .. " (Claude)" )
         else
-            table.insert( lines, "  Model: gpt-4o (OpenAI)" )
+            table.insert( lines, "  Model: " .. ( cfg.openai_vision_model or "?" ) .. " (OpenAI)" )
         end
         table.insert( lines, "Embed mode: " .. ( cfg.embed_mode or "?" ) )
         if cfg.embed_mode == "ollama" then
             table.insert( lines, "  Endpoint: " .. ( cfg.ollama_embed_endpoint or "?" ) )
             table.insert( lines, "  Model: " .. ( cfg.ollama_embed_model or "?" ) )
+        elseif cfg.embed_mode == "voyage" then
+            table.insert( lines, "  Model: " .. ( cfg.voyage_embed_model or "?" ) .. " (Voyage AI)" )
         else
-            table.insert( lines, "  Model: text-embedding-3-small (OpenAI)" )
+            table.insert( lines, "  Model: " .. ( cfg.openai_embed_model or "?" ) .. " (OpenAI)" )
         end
         table.insert( lines, "Search max results: " .. ( cfg.search_max_results or "?" ) )
         table.insert( lines, "Relevance threshold: " .. ( cfg.search_relevance or "?" ) )
