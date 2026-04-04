@@ -31,7 +31,15 @@ config = {
     # Search settings
     "search_max_results": 10,
     "search_relevance": 50,  # 0 = show all, 100 = only very close matches
+
+    # Thumbnail settings
+    "thumbnail_store_size": 512,  # max dimension in px for stored thumbnails (0 = disable)
+
+    # Privacy settings
+    "strip_gps_for_cloud": True,  # strip GPS from EXIF before sending to cloud APIs
 }
+
+VERSION = "1.1.0"
 
 
 def get_vision_model_label():

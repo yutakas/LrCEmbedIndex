@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  .back-link {
+    display: inline-block; margin-bottom: 1.5rem;
+    color: #6b8afd; text-decoration: none; font-size: 0.9rem;
+  }
+  .back-link:hover { text-decoration: underline; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 1.5rem; color: #fff; }
+  h2 { font-size: 1rem; font-weight: 600; color: #6b8afd; margin: 1.5rem 0 0.5rem; }
+  h3 { font-size: 0.9rem; font-weight: 600; color: #ccc; margin: 1rem 0 0.4rem; }
+  p { font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem; color: #bbb; }
+  ul, ol { font-size: 0.85rem; line-height: 1.6; color: #bbb; margin: 0.5rem 0 0.75rem 1.5rem; }
+  li { margin-bottom: 0.25rem; }
+  strong { color: #ddd; }
+  a { color: #6b8afd; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  table {
+    width: 100%; border-collapse: collapse; margin: 0.75rem 0;
+    font-size: 0.8rem;
+  }
+  th, td {
+    text-align: left; padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #333;
+  }
+  th { color: #999; font-weight: 600; background: #242424; }
+  td { color: #bbb; }
+  code {
+    background: #2a2a2a; padding: 0.15rem 0.35rem; border-radius: 3px;
+    font-size: 0.8rem; font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link" href="javascript:history.back()">&larr; Back</a>
+  <h1>Privacy Policy</h1>
+
+  <h2>What data is collected</h2>
+  <p>LrCEmbedIndex processes and stores the following data locally on your machine:</p>
+  <ul>
+    <li><strong>Photo thumbnails</strong> &mdash; downsized JPEG copies (configurable, default 512px)</li>
+    <li><strong>EXIF metadata</strong> &mdash; camera model, lens, exposure settings, GPS coordinates, date, keywords, rating</li>
+    <li><strong>AI-generated descriptions</strong> &mdash; text descriptions produced by vision models</li>
+    <li><strong>Embedding vectors</strong> &mdash; numerical representations used for semantic search</li>
+    <li><strong>File paths</strong> &mdash; original photo file locations</li>
+  </ul>
+
+  <h2>Where data is stored</h2>
+  <p>All data is stored <strong>locally</strong> in the index folder you configure. No telemetry, analytics, or usage data is collected or transmitted by LrCEmbedIndex itself.</p>
+
+  <h2>Cloud API data transmission</h2>
+  <p>When using cloud-based vision or embedding models, photo data is transmitted to third-party API servers:</p>
+  <table>
+    <tr><th>Provider</th><th>What is sent</th><th>When</th></tr>
+    <tr><td><strong>Ollama (default)</strong></td><td>Nothing leaves your machine</td><td>Vision &amp; embedding (fully local)</td></tr>
+    <tr><td><strong>OpenAI</strong></td><td>Photo images (vision), description text + EXIF (embedding)</td><td>When <code>vision_mode</code> or <code>embed_mode</code> is set to <code>openai</code></td></tr>
+    <tr><td><strong>Anthropic (Claude)</strong></td><td>Photo images</td><td>When <code>vision_mode</code> is set to <code>claude</code></td></tr>
+    <tr><td><strong>Voyage AI</strong></td><td>Description text + EXIF metadata</td><td>When <code>embed_mode</code> is set to <code>voyage</code></td></tr>
+  </table>
+
+  <h3>GPS location data</h3>
+  <p>EXIF metadata may include GPS coordinates. By default, GPS data is <strong>stripped</strong> from text sent to cloud APIs (<code>strip_gps_for_cloud</code> is enabled). You can disable this in settings if you want GPS included in cloud-processed descriptions.</p>
+  <p><strong>To keep all data local, use Ollama for both vision and embedding models.</strong></p>
+  <p>Review each provider's data handling policies:</p>
+  <ul>
+    <li><a href="https://openai.com/policies/usage-policies" target="_blank">OpenAI Usage Policies</a></li>
+    <li><a href="https://www.anthropic.com/policies/usage-policy" target="_blank">Anthropic Usage Policy</a></li>
+    <li><a href="https://www.voyageai.com/terms-of-service" target="_blank">Voyage AI Terms of Service</a></li>
+  </ul>
+
+  <h2>API key handling</h2>
+  <p>API keys are stored in Lightroom plugin preferences and kept in-memory on the server. They are <strong>never written to config files on disk</strong> and are redacted from all API responses.</p>
+
+  <h2>Data deletion</h2>
+  <p>You can delete all indexed data for a specific photo via:</p>
+  <ul>
+    <li><strong>Web UI</strong>: Photo detail page "Delete from index" button</li>
+    <li><strong>API</strong>: <code>DELETE /metadata?path=/path/to/photo</code></li>
+  </ul>
+  <p>This removes the metadata JSON, stored thumbnail, and ChromaDB vector entry.</p>
+  <p>To delete all indexed data, remove the index folder.</p>
+
+  <h2>Local server</h2>
+  <p>The server binds to <code>127.0.0.1</code> (localhost only) and is not accessible from the network. No authentication is required because only local processes can connect. Cross-origin requests are restricted to localhost origins.</p>
+
+  <h2>Contact</h2>
+  <p>For privacy questions, open an issue at <a href="https://github.com/yutakas/LrCEmbedIndex/issues" target="_blank">github.com/yutakas/LrCEmbedIndex/issues</a>.</p>
+</div>
+</body>
+</html>

@@ -1,26 +1,89 @@
 import json
 import logging
+import subprocess
 import tempfile
 import time
 import os
+import sys
 from urllib.parse import unquote
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file, render_template
 
 from config import (config, get_vision_model_label, get_embed_model_label,
-                    save_config, save_last_config_pointer)
+                    save_config, save_last_config_pointer, VERSION)
 from metadata import (load_photo_metadata, save_photo_metadata,
                       get_vision_result, set_vision_result,
                       get_embed_result, set_embed_result,
-                      count_metadata_files, collect_metadata_stats)
-from vectorstore import init_chromadb, upsert_photo, search_photos, get_chromadb_stats
+                      count_metadata_files, collect_metadata_stats,
+                      save_thumbnail, has_thumbnail,
+                      thumbnail_path_for_image, metadata_path_for_image,
+                      delete_photo_metadata)
+from vectorstore import (init_chromadb, upsert_photo, search_photos,
+                         get_chromadb_stats, delete_photo)
 from vision import describe_image
 from embedding import get_embedding
-from helpers import exif_to_text, compute_content_hash
+from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
 
 logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__)
+
+
+@api.after_request
+def add_cors_headers(response):
+    """Restrict cross-origin requests to localhost only."""
+    origin = request.headers.get("Origin", "")
+    if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    return response
+
+
+@api.route("/", methods=["GET"])
+def search_ui():
+    """Serve the search web UI."""
+    return render_template("search.html")
+
+
+@api.route("/photo", methods=["GET"])
+def photo_detail_ui():
+    """Serve the photo detail page."""
+    return render_template("photo.html")
+
+
+@api.route("/privacy", methods=["GET"])
+def privacy_page():
+    """Serve the privacy policy page."""
+    return render_template("privacy.html")
+
+
+@api.route("/licenses", methods=["GET"])
+def licenses_page():
+    """Serve the open source licenses page."""
+    return render_template("licenses.html")
+
+
+@api.route("/metadata", methods=["GET"])
+def get_metadata():
+    """Return the full metadata JSON for an image path."""
+    image_path = request.args.get("path", "")
+    if not image_path:
+        return jsonify({"status": "error", "message": "Missing 'path' parameter"}), 400
+
+    meta = load_photo_metadata(image_path)
+    if not meta:
+        return jsonify({"status": "error", "message": "No metadata found"}), 404
+
+    # Strip embedding vectors to keep response small
+    safe_meta = json.loads(json.dumps(meta))
+    for v_label, v_data in safe_meta.get("vision_results", {}).items():
+        for e_label, e_data in v_data.get("embeddings", {}).items():
+            if "embedding" in e_data:
+                e_data["embedding"] = f"[{len(e_data['embedding'])} dimensions]"
+
+    return jsonify({"status": "ok", "metadata": safe_meta,
+                    "has_thumbnail": has_thumbnail(image_path)})
 
 
 @api.route("/describe", methods=["POST"])
@@ -85,7 +148,7 @@ def describe_photo():
             logger.info(f"Describe: vision took {time.time() - t_vision:.1f}s")
 
             # Append EXIF
-            exif_text = exif_to_text(exif_data)
+            exif_text = exif_to_text(exif_data, strip_gps=config.get("strip_gps_for_cloud", False))
             if exif_text:
                 full_description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
             else:
@@ -97,6 +160,12 @@ def describe_photo():
                 set_vision_result(meta, vision_label, vision_description,
                                   exif_data, full_description)
                 save_photo_metadata(image_path, meta)
+
+                # Store thumbnail if configured
+                thumb_size = config.get("thumbnail_store_size", 512)
+                if thumb_size > 0 and not has_thumbnail(image_path):
+                    small_thumb = resize_thumbnail_bytes(jpeg_data, max_size=thumb_size)
+                    save_thumbnail(image_path, small_thumb)
 
             elapsed = time.time() - t_start
             logger.info(f"POST /describe completed in {elapsed:.1f}s — {image_path}")
@@ -193,7 +262,7 @@ def index_photo():
                             f"{vision_description[:100]}...")
 
                 # Append EXIF info to description for richer embedding
-                exif_text = exif_to_text(exif_data)
+                exif_text = exif_to_text(exif_data, strip_gps=config.get("strip_gps_for_cloud", False))
                 if exif_text:
                     description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
                 else:
@@ -219,6 +288,12 @@ def index_photo():
 
             # Persist metadata
             save_photo_metadata(image_path, existing)
+
+            # Store thumbnail if configured
+            thumb_size = config.get("thumbnail_store_size", 512)
+            if thumb_size > 0 and not has_thumbnail(image_path):
+                small_thumb = resize_thumbnail_bytes(jpeg_data, max_size=thumb_size)
+                save_thumbnail(image_path, small_thumb)
 
             # Always upsert to ChromaDB — we don't know which model pair
             # produced the current entry, so keep it in sync
@@ -329,6 +404,14 @@ def update_settings():
         if "search_relevance" in data:
             config["search_relevance"] = max(0, min(100, int(data["search_relevance"])))
 
+        # Thumbnail settings
+        if "thumbnail_store_size" in data:
+            config["thumbnail_store_size"] = max(0, int(data["thumbnail_store_size"]))
+
+        # Privacy settings
+        if "strip_gps_for_cloud" in data:
+            config["strip_gps_for_cloud"] = bool(data["strip_gps_for_cloud"])
+
         save_config()
         save_last_config_pointer()
 
@@ -370,6 +453,7 @@ def get_stats():
             "status": "ok",
             "metadata": {
                 "total_files": meta_count,
+                "thumbnail_files": meta_stats.get("thumbnail_count", 0),
                 "vision_models": meta_stats.get("vision_models", {}),
                 "embed_models": meta_stats.get("embed_models", {}),
                 "oldest_entry": meta_stats.get("oldest_entry"),
@@ -377,6 +461,7 @@ def get_stats():
             },
             "chromadb": chroma_stats,
             "config": safe_config,
+            "version": VERSION,
             "elapsed": round(elapsed, 2),
         })
 
@@ -384,3 +469,122 @@ def get_stats():
         elapsed = time.time() - t_start
         logger.exception(f"GET /stats failed in {elapsed:.1f}s: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api.route("/thumbnail", methods=["GET"])
+def get_thumbnail():
+    """Return the stored thumbnail JPEG for an image path."""
+    image_path = request.args.get("path", "")
+    if not image_path:
+        return jsonify({"status": "error", "message": "Missing 'path' parameter"}), 400
+
+    thumb_path = thumbnail_path_for_image(image_path)
+    if not thumb_path or not os.path.exists(thumb_path):
+        return jsonify({"status": "error", "message": "No thumbnail found"}), 404
+
+    return send_file(thumb_path, mimetype="image/jpeg")
+
+
+KNOWN_PHOTO_APPS = [
+    ("Adobe Lightroom Classic", "/Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app"),
+    ("Adobe Photoshop", "/Applications/Adobe Photoshop 2025/Adobe Photoshop 2025.app"),
+    ("Adobe Photoshop", "/Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app"),
+    ("Adobe Bridge", "/Applications/Adobe Bridge 2025/Adobe Bridge 2025.app"),
+    ("Adobe Bridge", "/Applications/Adobe Bridge 2024/Adobe Bridge 2024.app"),
+    ("Affinity Photo 2", "/Applications/Affinity Photo 2.app"),
+    ("Capture One", "/Applications/Capture One.app"),
+    ("DxO PhotoLab", "/Applications/DxO PhotoLab 8.app"),
+    ("DxO PhotoLab", "/Applications/DxO PhotoLab 7.app"),
+    ("Photos", "/Applications/Photos.app"),
+    ("Preview", "/Applications/Preview.app"),
+]
+
+
+@api.route("/apps", methods=["GET"])
+def list_apps():
+    """Return a list of installed photo applications."""
+    installed = []
+    seen = set()
+    if sys.platform == "darwin":
+        for name, path in KNOWN_PHOTO_APPS:
+            if name not in seen and os.path.exists(path):
+                installed.append({"name": name, "path": path})
+                seen.add(name)
+    return jsonify({"status": "ok", "apps": installed})
+
+
+def _is_indexed_path(file_path):
+    """Check if a file path exists in the metadata index."""
+    meta_path = metadata_path_for_image(file_path)
+    return meta_path is not None and os.path.exists(meta_path)
+
+
+def _is_known_app(app_path):
+    """Check if an app path is in the known photo apps list."""
+    return any(path == app_path for _, path in KNOWN_PHOTO_APPS)
+
+
+@api.route("/open", methods=["POST"])
+def open_file():
+    """Open or reveal a photo file on the local machine."""
+    data = request.get_json()
+    if not data or "path" not in data:
+        return jsonify({"status": "error", "message": "Missing 'path'"}), 400
+
+    file_path = os.path.abspath(data["path"])
+    action = data.get("action", "open")
+    app_path = data.get("app")
+
+    # Only allow opening files that are in the metadata index
+    if not _is_indexed_path(data["path"]):
+        return jsonify({"status": "error",
+                        "message": "Path not in index"}), 403
+
+    if not os.path.exists(file_path):
+        return jsonify({"status": "error", "message": "File not found"}), 404
+
+    # Only allow known photo apps
+    if app_path and not _is_known_app(app_path):
+        return jsonify({"status": "error",
+                        "message": "Unknown application"}), 403
+
+    try:
+        if sys.platform == "darwin":
+            if action == "reveal":
+                subprocess.Popen(["open", "-R", file_path])
+            elif app_path:
+                subprocess.Popen(["open", "-a", app_path, file_path])
+            else:
+                subprocess.Popen(["open", file_path])
+        elif sys.platform == "win32":
+            if action == "reveal":
+                subprocess.Popen(["explorer", "/select,", file_path])
+            else:
+                os.startfile(file_path)
+        else:
+            subprocess.Popen(["xdg-open", file_path])
+
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api.route("/metadata", methods=["DELETE"])
+def delete_metadata():
+    """Delete all indexed data (metadata, thumbnail, ChromaDB entry) for a photo."""
+    image_path = request.args.get("path", "")
+    if not image_path:
+        return jsonify({"status": "error", "message": "Missing 'path' parameter"}), 400
+
+    # Try to compute content hash for ChromaDB deletion
+    try:
+        doc_id = compute_content_hash(image_path)
+        delete_photo(doc_id)
+    except (FileNotFoundError, PermissionError):
+        pass  # original file may be gone, still delete metadata
+
+    deleted = delete_photo_metadata(image_path)
+    if not deleted:
+        return jsonify({"status": "error", "message": "No metadata found"}), 404
+
+    return jsonify({"status": "ok", "message": "Photo data deleted"})

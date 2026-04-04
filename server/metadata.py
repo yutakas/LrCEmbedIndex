@@ -22,6 +22,56 @@ def metadata_path_for_image(image_path):
     return os.path.join(meta_dir, md5[:2], f"{md5}.json")
 
 
+def thumbnail_path_for_image(image_path):
+    """Return the path where a stored thumbnail JPEG should live."""
+    md5 = hashlib.md5(image_path.encode("utf-8")).hexdigest()
+    meta_dir = get_metadata_dir()
+    if not meta_dir:
+        return None
+    return os.path.join(meta_dir, md5[:2], f"{md5}.jpg")
+
+
+def save_thumbnail(image_path, jpeg_bytes):
+    """Write thumbnail JPEG bytes to the shard directory."""
+    path = thumbnail_path_for_image(image_path)
+    if path:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(jpeg_bytes)
+
+
+def load_thumbnail(image_path):
+    """Return thumbnail JPEG bytes, or None if not stored."""
+    path = thumbnail_path_for_image(image_path)
+    if path and os.path.exists(path):
+        with open(path, "rb") as f:
+            return f.read()
+    return None
+
+
+def has_thumbnail(image_path):
+    """Check if a stored thumbnail exists for the given image path."""
+    path = thumbnail_path_for_image(image_path)
+    return path is not None and os.path.exists(path)
+
+
+def delete_photo_metadata(image_path):
+    """Delete the metadata JSON and thumbnail for an image path.
+
+    Returns True if at least one file was deleted.
+    """
+    deleted = False
+    meta_path = metadata_path_for_image(image_path)
+    if meta_path and os.path.exists(meta_path):
+        os.unlink(meta_path)
+        deleted = True
+    thumb_path = thumbnail_path_for_image(image_path)
+    if thumb_path and os.path.exists(thumb_path):
+        os.unlink(thumb_path)
+        deleted = True
+    return deleted
+
+
 def load_photo_metadata(image_path):
     path = metadata_path_for_image(image_path)
     if path and os.path.exists(path):
@@ -106,6 +156,18 @@ def count_metadata_files():
     return count
 
 
+def count_thumbnail_files():
+    meta_dir = get_metadata_dir()
+    if not meta_dir or not os.path.exists(meta_dir):
+        return 0
+    count = 0
+    for shard in os.listdir(meta_dir):
+        shard_path = os.path.join(meta_dir, shard)
+        if os.path.isdir(shard_path):
+            count += len([f for f in os.listdir(shard_path) if f.endswith(".jpg")])
+    return count
+
+
 def collect_metadata_stats():
     """Scan all metadata files and return aggregate stats.
 
@@ -159,9 +221,18 @@ def collect_metadata_stats():
                         if newest is None or e_ts > newest:
                             newest = e_ts
 
+    thumb_count = 0
+    for shard in os.listdir(meta_dir):
+        shard_path = os.path.join(meta_dir, shard)
+        if os.path.isdir(shard_path):
+            thumb_count += len(
+                [f for f in os.listdir(shard_path) if f.endswith(".jpg")]
+            )
+
     return {
         "vision_models": vision_counts,
         "embed_models": embed_counts,
         "oldest_entry": oldest,
         "newest_entry": newest,
+        "thumbnail_count": thumb_count,
     }

@@ -21,6 +21,10 @@ return {
             file = "DescribePhoto.lua",
         },
         {
+            title = "Search in Browser",
+            file = "SearchInBrowser.lua",
+        },
+        {
             title = "Show Index Stats",
             file = "ShowStats.lua",
         },

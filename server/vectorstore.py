@@ -86,6 +86,17 @@ def get_chromadb_stats():
     return stats
 
 
+def delete_photo(doc_id):
+    """Delete a photo entry from ChromaDB by document ID."""
+    _ensure_correct_store()
+    if chroma_collection is None:
+        return
+    try:
+        chroma_collection.delete(ids=[doc_id])
+    except Exception:
+        pass  # entry may not exist in current store
+
+
 def upsert_photo(doc_id, embedding, description, image_path):
     _ensure_correct_store()
     if chroma_collection is None:
