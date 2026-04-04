@@ -110,6 +110,19 @@
   .loading { text-align: center; padding: 3rem; color: #666; }
   .error { text-align: center; padding: 3rem; color: #f87171; }
 
+  .btn-danger {
+    background: #3a1a1a; border-color: #663333; color: #f87171;
+  }
+  .btn-danger:hover { border-color: #f87171; }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
+
   @media (max-width: 600px) {
     .photo-header { flex-direction: column; }
     .photo-thumb { max-width: 100%; }
@@ -120,6 +133,13 @@
 <div class="container">
   <a class="back-link" href="javascript:history.back()">&larr; Back to search</a>
   <div id="content"><div class="loading">Loading photo details...</div></div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
 </div>
 <script>
 const contentEl = document.getElementById('content');
@@ -168,6 +188,7 @@ async function loadPhoto() {
       <div id="openMenu" class="open-menu"></div>
     </div>`;
     html += `<button onclick="revealFile()">Reveal in Finder</button>`;
+    html += `<button class="btn-danger" onclick="deleteFromIndex()">Delete from index</button>`;
     html += `<a href="/thumbnail?path=${encodeURIComponent(imagePath)}" target="_blank">View thumbnail</a>`;
     if (meta.content_hash) {
       html += `<span class="embed-tag">Hash: ${escapeHtml(meta.content_hash.substring(0, 20))}...</span>`;
@@ -199,9 +220,10 @@ async function loadPhoto() {
       for (const [key, label] of Object.entries(exifLabels)) {
         const val = exifData[key];
         if (val && String(val).trim()) {
+          const mapLink = (key === 'gps') ? parseGpsLink(String(val)) : null;
           html += `<div class="exif-item">
             <div class="exif-label">${escapeHtml(label)}</div>
-            <div class="exif-value">${escapeHtml(String(val))}</div>
+            <div class="exif-value">${escapeHtml(String(val))}${mapLink ? ` <a href="${mapLink}" target="_blank" style="color:#6b8afd;font-size:0.8rem">Open map</a>` : ''}</div>
           </div>`;
         }
       }
@@ -313,6 +335,58 @@ async function revealFile() {
     if (data.status !== 'ok') alert(data.message || 'Failed to reveal file');
   } catch (err) { alert('Error: ' + err.message); }
 }
+
+function parseGpsLink(gps) {
+  // Handle formats: "35°20'5.61" N 139°33'4.79" E", "35.6762° N, 139.6503° E", "35.6762, 139.6503"
+  const hasSouth = /[Ss]/.test(gps);
+  const hasWest = /[Ww]/.test(gps);
+  // Replace degree/minute/second symbols and direction letters with spaces, then extract numbers
+  const cleaned = gps.replace(/[°''""\u2032\u2033]/g, ' ').replace(/[NSEWnsew,]/g, ' ');
+  const nums = cleaned.match(/-?\d+\.?\d*/g);
+  if (!nums || nums.length < 2) return null;
+  let lat, lng;
+  if (nums.length >= 6) {
+    // DMS: deg min sec, deg min sec
+    lat = parseFloat(nums[0]) + parseFloat(nums[1]) / 60 + parseFloat(nums[2]) / 3600;
+    lng = parseFloat(nums[3]) + parseFloat(nums[4]) / 60 + parseFloat(nums[5]) / 3600;
+  } else if (nums.length >= 4) {
+    // DM: deg min, deg min
+    lat = parseFloat(nums[0]) + parseFloat(nums[1]) / 60;
+    lng = parseFloat(nums[2]) + parseFloat(nums[3]) / 60;
+  } else {
+    // Decimal: lat, lng
+    lat = parseFloat(nums[0]);
+    lng = parseFloat(nums[1]);
+  }
+  if (hasSouth) lat = -Math.abs(lat);
+  if (hasWest) lng = -Math.abs(lng);
+  if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return null;
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+async function deleteFromIndex() {
+  if (!confirm('Delete all indexed data for this photo? (metadata, thumbnail, vector)')) return;
+  try {
+    const resp = await fetch('/metadata?path=' + encodeURIComponent(imagePath), { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      alert('Photo data deleted.');
+      history.back();
+    } else {
+      alert(data.message || 'Failed to delete');
+    }
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+(async function loadVersion() {
+  try {
+    const resp = await fetch('/stats');
+    const data = await resp.json();
+    if (data.version) {
+      document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + data.version;
+    }
+  } catch (e) {}
+})();
 
 function escapeHtml(s) {
   const d = document.createElement('div');

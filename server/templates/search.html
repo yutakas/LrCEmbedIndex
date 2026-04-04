@@ -54,7 +54,21 @@
   }
   .status.error { color: #f87171; }
 
+  .toolbar {
+    display: flex; justify-content: flex-end; margin-bottom: 0.75rem; gap: 0.25rem;
+  }
+  .view-btn {
+    padding: 0.35rem 0.6rem; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 6px; color: #888; cursor: pointer; font-size: 0.85rem;
+    font-family: inherit; line-height: 1;
+  }
+  .view-btn.active { color: #6b8afd; border-color: #6b8afd; }
+  .view-btn:hover { border-color: #555; }
+
   .results { display: flex; flex-direction: column; gap: 1rem; }
+  .results.grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem;
+  }
 
   .result-card {
     display: flex; gap: 1rem; padding: 1rem;
@@ -94,18 +108,33 @@
   .result-distance {
     font-size: 0.7rem; color: #555; margin-top: 0.5rem;
   }
-  .result-actions {
-    display: flex; gap: 0.75rem; margin-top: 0.5rem; font-size: 0.8rem;
+  /* Grid / tile view */
+  .results.grid .result-card {
+    flex-direction: column; padding: 0;
   }
-  .result-actions a {
-    color: #6b8afd; text-decoration: none;
+  .results.grid .thumb-container {
+    width: 100%; height: 160px; border-radius: 10px 10px 0 0;
   }
-  .result-actions a:hover { text-decoration: underline; }
+  .results.grid .result-info {
+    padding: 0.6rem 0.75rem;
+  }
+  .results.grid .result-description { display: none; }
+  .results.grid .result-path { display: none; }
+  .results.grid .result-filename { font-size: 0.8rem; }
+  .results.grid .result-distance { margin-top: 0.25rem; }
 
   @media (max-width: 600px) {
     .result-card { flex-direction: column; }
     .thumb-container { width: 100%; height: 200px; }
   }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
 </style>
 </head>
 <body>
@@ -122,8 +151,19 @@
     </select>
     <button id="searchBtn" onclick="doSearch()">Search</button>
   </div>
-  <div id="status"></div>
+  <div id="status" class="status"></div>
+  <div id="toolbar" class="toolbar" style="display:none">
+    <button class="view-btn active" id="listBtn" onclick="setView('list')" title="List view">&#9776;</button>
+    <button class="view-btn" id="gridBtn" onclick="setView('grid')" title="Grid view">&#9638;</button>
+  </div>
   <div id="results" class="results"></div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
 </div>
 <script>
 const queryInput = document.getElementById('query');
@@ -131,6 +171,15 @@ const searchBtn = document.getElementById('searchBtn');
 const statusEl = document.getElementById('status');
 const resultsEl = document.getElementById('results');
 const modelInfoEl = document.getElementById('modelInfo');
+const toolbarEl = document.getElementById('toolbar');
+let currentView = 'list';
+
+function setView(mode) {
+  currentView = mode;
+  resultsEl.classList.toggle('grid', mode === 'grid');
+  document.getElementById('listBtn').classList.toggle('active', mode === 'list');
+  document.getElementById('gridBtn').classList.toggle('active', mode === 'grid');
+}
 
 queryInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') doSearch();
@@ -162,6 +211,9 @@ async function loadModelInfo() {
         <div class="tag"><span class="label">Thumbnails:</span> <span class="value">${thumbs}</span></div>
       `;
     }
+    if (data.version) {
+      document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + data.version;
+    }
   } catch (e) {}
 }
 loadModelInfo();
@@ -174,6 +226,7 @@ async function doSearch() {
   statusEl.className = 'status';
   statusEl.textContent = 'Searching...';
   resultsEl.innerHTML = '';
+  toolbarEl.style.display = 'none';
 
   try {
     const resp = await fetch('/search', {
@@ -195,6 +248,8 @@ async function doSearch() {
     }
 
     statusEl.textContent = `${data.results.length} result${data.results.length > 1 ? 's' : ''} in ${data.elapsed}s`;
+    toolbarEl.style.display = 'flex';
+    setView(currentView);
 
     for (const r of data.results) {
       const filename = r.path.split('/').pop();

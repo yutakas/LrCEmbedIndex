@@ -10,14 +10,16 @@ from urllib.parse import unquote
 from flask import Blueprint, request, jsonify, send_file, render_template
 
 from config import (config, get_vision_model_label, get_embed_model_label,
-                    save_config, save_last_config_pointer)
+                    save_config, save_last_config_pointer, VERSION)
 from metadata import (load_photo_metadata, save_photo_metadata,
                       get_vision_result, set_vision_result,
                       get_embed_result, set_embed_result,
                       count_metadata_files, collect_metadata_stats,
                       save_thumbnail, has_thumbnail,
-                      thumbnail_path_for_image)
-from vectorstore import init_chromadb, upsert_photo, search_photos, get_chromadb_stats
+                      thumbnail_path_for_image, metadata_path_for_image,
+                      delete_photo_metadata)
+from vectorstore import (init_chromadb, upsert_photo, search_photos,
+                         get_chromadb_stats, delete_photo)
 from vision import describe_image
 from embedding import get_embedding
 from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
@@ -25,6 +27,17 @@ from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
 logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__)
+
+
+@api.after_request
+def add_cors_headers(response):
+    """Restrict cross-origin requests to localhost only."""
+    origin = request.headers.get("Origin", "")
+    if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    return response
 
 
 @api.route("/", methods=["GET"])
@@ -37,6 +50,18 @@ def search_ui():
 def photo_detail_ui():
     """Serve the photo detail page."""
     return render_template("photo.html")
+
+
+@api.route("/privacy", methods=["GET"])
+def privacy_page():
+    """Serve the privacy policy page."""
+    return render_template("privacy.html")
+
+
+@api.route("/licenses", methods=["GET"])
+def licenses_page():
+    """Serve the open source licenses page."""
+    return render_template("licenses.html")
 
 
 @api.route("/metadata", methods=["GET"])
@@ -123,7 +148,7 @@ def describe_photo():
             logger.info(f"Describe: vision took {time.time() - t_vision:.1f}s")
 
             # Append EXIF
-            exif_text = exif_to_text(exif_data)
+            exif_text = exif_to_text(exif_data, strip_gps=config.get("strip_gps_for_cloud", False))
             if exif_text:
                 full_description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
             else:
@@ -237,7 +262,7 @@ def index_photo():
                             f"{vision_description[:100]}...")
 
                 # Append EXIF info to description for richer embedding
-                exif_text = exif_to_text(exif_data)
+                exif_text = exif_to_text(exif_data, strip_gps=config.get("strip_gps_for_cloud", False))
                 if exif_text:
                     description = vision_description + "\n\n--- Photo Metadata ---\n" + exif_text
                 else:
@@ -383,6 +408,10 @@ def update_settings():
         if "thumbnail_store_size" in data:
             config["thumbnail_store_size"] = max(0, int(data["thumbnail_store_size"]))
 
+        # Privacy settings
+        if "strip_gps_for_cloud" in data:
+            config["strip_gps_for_cloud"] = bool(data["strip_gps_for_cloud"])
+
         save_config()
         save_last_config_pointer()
 
@@ -432,6 +461,7 @@ def get_stats():
             },
             "chromadb": chroma_stats,
             "config": safe_config,
+            "version": VERSION,
             "elapsed": round(elapsed, 2),
         })
 
@@ -483,6 +513,17 @@ def list_apps():
     return jsonify({"status": "ok", "apps": installed})
 
 
+def _is_indexed_path(file_path):
+    """Check if a file path exists in the metadata index."""
+    meta_path = metadata_path_for_image(file_path)
+    return meta_path is not None and os.path.exists(meta_path)
+
+
+def _is_known_app(app_path):
+    """Check if an app path is in the known photo apps list."""
+    return any(path == app_path for _, path in KNOWN_PHOTO_APPS)
+
+
 @api.route("/open", methods=["POST"])
 def open_file():
     """Open or reveal a photo file on the local machine."""
@@ -490,12 +531,22 @@ def open_file():
     if not data or "path" not in data:
         return jsonify({"status": "error", "message": "Missing 'path'"}), 400
 
-    file_path = data["path"]
+    file_path = os.path.abspath(data["path"])
     action = data.get("action", "open")
     app_path = data.get("app")
 
+    # Only allow opening files that are in the metadata index
+    if not _is_indexed_path(data["path"]):
+        return jsonify({"status": "error",
+                        "message": "Path not in index"}), 403
+
     if not os.path.exists(file_path):
         return jsonify({"status": "error", "message": "File not found"}), 404
+
+    # Only allow known photo apps
+    if app_path and not _is_known_app(app_path):
+        return jsonify({"status": "error",
+                        "message": "Unknown application"}), 403
 
     try:
         if sys.platform == "darwin":
@@ -516,3 +567,24 @@ def open_file():
         return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api.route("/metadata", methods=["DELETE"])
+def delete_metadata():
+    """Delete all indexed data (metadata, thumbnail, ChromaDB entry) for a photo."""
+    image_path = request.args.get("path", "")
+    if not image_path:
+        return jsonify({"status": "error", "message": "Missing 'path' parameter"}), 400
+
+    # Try to compute content hash for ChromaDB deletion
+    try:
+        doc_id = compute_content_hash(image_path)
+        delete_photo(doc_id)
+    except (FileNotFoundError, PermissionError):
+        pass  # original file may be gone, still delete metadata
+
+    deleted = delete_photo_metadata(image_path)
+    if not deleted:
+        return jsonify({"status": "error", "message": "No metadata found"}), 404
+
+    return jsonify({"status": "ok", "message": "Photo data deleted"})

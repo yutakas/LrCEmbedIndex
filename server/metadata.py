@@ -55,6 +55,23 @@ def has_thumbnail(image_path):
     return path is not None and os.path.exists(path)
 
 
+def delete_photo_metadata(image_path):
+    """Delete the metadata JSON and thumbnail for an image path.
+
+    Returns True if at least one file was deleted.
+    """
+    deleted = False
+    meta_path = metadata_path_for_image(image_path)
+    if meta_path and os.path.exists(meta_path):
+        os.unlink(meta_path)
+        deleted = True
+    thumb_path = thumbnail_path_for_image(image_path)
+    if thumb_path and os.path.exists(thumb_path):
+        os.unlink(thumb_path)
+        deleted = True
+    return deleted
+
+
 def load_photo_metadata(image_path):
     path = metadata_path_for_image(image_path)
     if path and os.path.exists(path):

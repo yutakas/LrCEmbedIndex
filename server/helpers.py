@@ -20,9 +20,11 @@ EXIF_FIELD_MAP = {
 }
 
 
-def exif_to_text(exif_data):
+def exif_to_text(exif_data, strip_gps=False):
     parts = []
     for key, label in EXIF_FIELD_MAP.items():
+        if strip_gps and key == "gps":
+            continue
         val = exif_data.get(key, "")
         if val and str(val).strip():
             parts.append(f"{label}: {val}")
