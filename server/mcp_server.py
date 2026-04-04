@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import sys
+from urllib.parse import quote
 
 # Ensure server/ modules are importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -51,7 +52,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("LrCEmbedIndex", version=VERSION)
+mcp = FastMCP("LrCEmbedIndex")
 
 _initialized = False
 
@@ -78,6 +79,22 @@ def _strip_embeddings(meta: dict) -> dict:
         for e_data in v_data.get("embeddings", {}).values():
             e_data.pop("embedding", None)
     return clean
+
+
+WEB_UI_BASE = "http://127.0.0.1:8600"
+
+
+def _photo_detail_url(image_path: str) -> str:
+    return f"{WEB_UI_BASE}/photo?path={quote(image_path)}"
+
+
+def _search_url(query: str) -> str:
+    return f"{WEB_UI_BASE}/?q={quote(query)}"
+
+
+def _collection_url(paths: list[str]) -> str:
+    params = "&".join(f"paths={quote(p)}" for p in paths)
+    return f"{WEB_UI_BASE}/collection?{params}"
 
 
 def _thumbnail_content(image_path: str) -> ImageContent | None:
@@ -124,7 +141,10 @@ async def search_photos(
     if not matches:
         return [TextContent(type="text", text="No matching photos found.")]
 
-    content: list[TextContent | ImageContent] = []
+    result_paths = [m["path"] for m in matches]
+    content: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=f"View these photos in browser: {_collection_url(result_paths)}"),
+    ]
     for i, m in enumerate(matches):
         content.append(TextContent(
             type="text",
@@ -134,6 +154,7 @@ async def search_photos(
                 "filename": os.path.basename(m["path"]),
                 "description": m["description"],
                 "distance": round(m["distance"], 4),
+                "detail_url": _photo_detail_url(m["path"]),
             }, indent=2),
         ))
         if include_thumbnails:
@@ -162,6 +183,7 @@ async def get_photo_info(
         return [TextContent(type="text", text=f"No metadata found for: {path}")]
 
     clean = _strip_embeddings(meta)
+    clean["detail_url"] = _photo_detail_url(path)
     content: list[TextContent | ImageContent] = [
         TextContent(type="text", text=json.dumps(clean, indent=2)),
     ]

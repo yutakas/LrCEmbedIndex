@@ -52,6 +52,12 @@ def photo_detail_ui():
     return render_template("photo.html")
 
 
+@api.route("/collection", methods=["GET"])
+def collection_page():
+    """Serve a page showing a specific set of photos by path."""
+    return render_template("collection.html")
+
+
 @api.route("/privacy", methods=["GET"])
 def privacy_page():
     """Serve the privacy policy page."""

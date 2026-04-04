@@ -293,6 +293,13 @@ function escapeHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+// Auto-search if ?q= is in the URL
+const urlQ = new URLSearchParams(window.location.search).get('q');
+if (urlQ) {
+  queryInput.value = urlQ;
+  doSearch();
+}
 </script>
 </body>
 </html>

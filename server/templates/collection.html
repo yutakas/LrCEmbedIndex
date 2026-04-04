@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Collection - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 0.25rem; color: #fff; }
+  h1 span { color: #888; font-weight: 300; }
+  .subtitle { font-size: 0.85rem; color: #666; margin-bottom: 1.5rem; }
+
+  .toolbar {
+    display: flex; justify-content: flex-end; margin-bottom: 0.75rem; gap: 0.25rem;
+  }
+  .view-btn {
+    padding: 0.35rem 0.6rem; background: #2a2a2a; border: 1px solid #444;
+    border-radius: 6px; color: #888; cursor: pointer; font-size: 0.85rem;
+    font-family: inherit; line-height: 1;
+  }
+  .view-btn.active { color: #6b8afd; border-color: #6b8afd; }
+  .view-btn:hover { border-color: #555; }
+
+  .results { display: flex; flex-direction: column; gap: 1rem; }
+  .results.grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem;
+  }
+
+  .result-card {
+    display: flex; gap: 1rem; padding: 1rem;
+    background: #242424; border-radius: 10px;
+    border: 1px solid #333; transition: border-color 0.2s;
+    cursor: pointer; text-decoration: none; color: inherit;
+  }
+  .result-card:hover { border-color: #555; }
+
+  .thumb-container {
+    flex-shrink: 0; width: 160px; height: 120px;
+    border-radius: 6px; overflow: hidden; background: #333;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb-container img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .thumb-container .no-thumb {
+    font-size: 0.75rem; color: #555; text-align: center;
+  }
+
+  .result-info { flex: 1; min-width: 0; }
+  .result-filename {
+    font-weight: 600; font-size: 0.95rem; color: #fff;
+    margin-bottom: 0.25rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .result-path {
+    font-size: 0.75rem; color: #666; margin-bottom: 0.5rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .result-description {
+    font-size: 0.85rem; color: #aaa; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Grid / tile view */
+  .results.grid .result-card {
+    flex-direction: column; padding: 0;
+  }
+  .results.grid .thumb-container {
+    width: 100%; height: 160px; border-radius: 10px 10px 0 0;
+  }
+  .results.grid .result-info {
+    padding: 0.6rem 0.75rem;
+  }
+  .results.grid .result-description { display: none; }
+  .results.grid .result-path { display: none; }
+  .results.grid .result-filename { font-size: 0.8rem; }
+
+  .loading { text-align: center; padding: 3rem; color: #666; }
+  .error { text-align: center; padding: 3rem; color: #f87171; }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
+
+  @media (max-width: 600px) {
+    .result-card { flex-direction: column; }
+    .thumb-container { width: 100%; height: 200px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LrCEmbedIndex <span>Collection</span></h1>
+  <div id="subtitle" class="subtitle"></div>
+  <div id="toolbar" class="toolbar" style="display:none">
+    <button class="view-btn active" id="listBtn" onclick="setView('list')" title="List view">&#9776;</button>
+    <button class="view-btn" id="gridBtn" onclick="setView('grid')" title="Grid view">&#9638;</button>
+  </div>
+  <div id="results" class="results"></div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/">Search</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
+</div>
+<script>
+const resultsEl = document.getElementById('results');
+const toolbarEl = document.getElementById('toolbar');
+const subtitleEl = document.getElementById('subtitle');
+let currentView = 'list';
+
+function setView(mode) {
+  currentView = mode;
+  resultsEl.classList.toggle('grid', mode === 'grid');
+  document.getElementById('listBtn').classList.toggle('active', mode === 'list');
+  document.getElementById('gridBtn').classList.toggle('active', mode === 'grid');
+}
+
+const params = new URLSearchParams(window.location.search);
+const paths = params.getAll('paths');
+
+if (paths.length === 0) {
+  resultsEl.innerHTML = '<div class="error">No photo paths specified.</div>';
+} else {
+  loadCollection();
+}
+
+async function loadCollection() {
+  subtitleEl.textContent = `Loading ${paths.length} photo${paths.length > 1 ? 's' : ''}...`;
+
+  let loaded = 0;
+  let failed = 0;
+
+  for (const p of paths) {
+    try {
+      const resp = await fetch('/metadata?path=' + encodeURIComponent(p));
+      const data = await resp.json();
+
+      const filename = p.split('/').pop();
+      const dir = p.substring(0, p.length - filename.length);
+      const thumbUrl = '/thumbnail?path=' + encodeURIComponent(p);
+      const detailUrl = '/photo?path=' + encodeURIComponent(p);
+
+      let desc = '';
+      if (data.status === 'ok' && data.metadata) {
+        const vr = data.metadata.vision_results || {};
+        for (const v of Object.values(vr)) {
+          if (v.vision_description) {
+            desc = v.vision_description;
+            break;
+          }
+        }
+      }
+
+      const card = document.createElement('a');
+      card.className = 'result-card';
+      card.href = detailUrl;
+      card.innerHTML = `
+        <div class="thumb-container">
+          <img src="${thumbUrl}" alt="${escapeHtml(filename)}" onerror="this.outerHTML='<div class=no-thumb>No thumbnail</div>'">
+        </div>
+        <div class="result-info">
+          <div class="result-filename">${escapeHtml(filename)}</div>
+          <div class="result-path" title="${escapeHtml(p)}">${escapeHtml(dir)}</div>
+          <div class="result-description">${escapeHtml(desc)}</div>
+        </div>
+      `;
+      resultsEl.appendChild(card);
+      loaded++;
+    } catch (err) {
+      failed++;
+    }
+  }
+
+  subtitleEl.textContent = `${loaded} photo${loaded !== 1 ? 's' : ''}` + (failed > 0 ? ` (${failed} failed to load)` : '');
+  if (loaded > 0) {
+    toolbarEl.style.display = 'flex';
+    setView(currentView);
+  }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+(async function loadVersion() {
+  try {
+    const resp = await fetch('/stats');
+    const data = await resp.json();
+    if (data.version) {
+      document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + data.version;
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
