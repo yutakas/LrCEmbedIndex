@@ -41,6 +41,11 @@
     background: #6b8afd; color: #fff; border: none; border-radius: 8px;
     cursor: pointer; transition: background 0.2s;
   }
+  .search-box select {
+    padding: 0.75rem 0.5rem; font-size: 0.9rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
+    color: #fff; outline: none;
+  }
   .search-box button:hover { background: #5a7af0; }
   .search-box button:disabled { background: #444; cursor: not-allowed; }
 
@@ -55,6 +60,7 @@
     display: flex; gap: 1rem; padding: 1rem;
     background: #242424; border-radius: 10px;
     border: 1px solid #333; transition: border-color 0.2s;
+    cursor: pointer; text-decoration: none; color: inherit;
   }
   .result-card:hover { border-color: #555; }
 
@@ -88,6 +94,13 @@
   .result-distance {
     font-size: 0.7rem; color: #555; margin-top: 0.5rem;
   }
+  .result-actions {
+    display: flex; gap: 0.75rem; margin-top: 0.5rem; font-size: 0.8rem;
+  }
+  .result-actions a {
+    color: #6b8afd; text-decoration: none;
+  }
+  .result-actions a:hover { text-decoration: underline; }
 
   @media (max-width: 600px) {
     .result-card { flex-direction: column; }
@@ -101,6 +114,12 @@
   <div id="modelInfo" class="model-info"></div>
   <div class="search-box">
     <input type="text" id="query" placeholder="Describe the photo you're looking for..." autofocus>
+    <select id="maxResults">
+      <option value="5">5</option>
+      <option value="10">10</option>
+      <option value="20">20</option>
+      <option value="50">50</option>
+    </select>
     <button id="searchBtn" onclick="doSearch()">Search</button>
   </div>
   <div id="status"></div>
@@ -160,7 +179,7 @@ async function doSearch() {
     const resp = await fetch('/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: query, max_results: 5 }),
+      body: JSON.stringify({ query: query, max_results: parseInt(document.getElementById('maxResults').value) }),
     });
     const data = await resp.json();
 
@@ -183,8 +202,11 @@ async function doSearch() {
       const desc = extractVisionDescription(r.description);
       const thumbUrl = '/thumbnail?path=' + encodeURIComponent(r.path);
 
-      const card = document.createElement('div');
+      const detailUrl = '/photo?path=' + encodeURIComponent(r.path);
+
+      const card = document.createElement('a');
       card.className = 'result-card';
+      card.href = detailUrl;
       card.innerHTML = `
         <div class="thumb-container">
           <img src="${thumbUrl}" alt="${filename}" onerror="this.outerHTML='<div class=no-thumb>No thumbnail</div>'">

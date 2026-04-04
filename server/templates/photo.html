@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Detail - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+
+  .back-link {
+    display: inline-block; margin-bottom: 1.5rem;
+    color: #6b8afd; text-decoration: none; font-size: 0.9rem;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .photo-header {
+    display: flex; gap: 1.5rem; margin-bottom: 2rem;
+  }
+  .photo-thumb {
+    flex-shrink: 0; max-width: 320px; border-radius: 8px; overflow: hidden;
+    background: #333; display: flex; align-items: center; justify-content: center;
+  }
+  .photo-thumb img { width: 100%; height: auto; display: block; }
+  .photo-thumb .no-thumb { padding: 3rem; color: #555; font-size: 0.85rem; }
+
+  .photo-title-area { flex: 1; min-width: 0; }
+  .photo-filename {
+    font-size: 1.3rem; font-weight: 600; color: #fff; margin-bottom: 0.25rem;
+    word-break: break-all;
+  }
+  .photo-path {
+    font-size: 0.8rem; color: #666; margin-bottom: 1rem;
+    word-break: break-all;
+  }
+  .photo-actions {
+    display: flex; gap: 0.75rem; flex-wrap: wrap;
+  }
+  .photo-actions a, .photo-actions button {
+    display: inline-block; padding: 0.4rem 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #6b8afd; text-decoration: none; font-size: 0.8rem;
+    cursor: pointer; font-family: inherit;
+  }
+  .photo-actions a:hover, .photo-actions button:hover { border-color: #6b8afd; }
+
+  .open-menu-wrapper { position: relative; display: inline-block; }
+  .open-menu {
+    display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    min-width: 200px; z-index: 10; overflow: hidden;
+  }
+  .open-menu.show { display: block; }
+  .open-menu-item {
+    display: block; width: 100%; padding: 0.5rem 0.75rem;
+    background: none; border: none; color: #ddd; font-size: 0.8rem;
+    text-align: left; cursor: pointer; font-family: inherit;
+  }
+  .open-menu-item:hover { background: #333; }
+  .open-menu-divider { border-top: 1px solid #333; }
+
+  .section {
+    margin-bottom: 1.5rem;
+  }
+  .section-title {
+    font-size: 0.85rem; font-weight: 600; color: #999; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid #333;
+  }
+
+  .exif-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.5rem;
+  }
+  .exif-item {
+    background: #242424; border-radius: 6px; padding: 0.5rem 0.75rem;
+  }
+  .exif-label { font-size: 0.7rem; color: #666; text-transform: uppercase; }
+  .exif-value { font-size: 0.9rem; color: #ddd; margin-top: 0.15rem; }
+
+  .description-text {
+    background: #242424; border-radius: 8px; padding: 1rem;
+    font-size: 0.9rem; line-height: 1.6; color: #ccc; white-space: pre-wrap;
+  }
+
+  .model-section {
+    background: #242424; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;
+  }
+  .model-label {
+    font-size: 0.8rem; font-weight: 600; color: #6b8afd; margin-bottom: 0.5rem;
+  }
+  .model-meta {
+    font-size: 0.75rem; color: #666; margin-bottom: 0.5rem;
+  }
+  .model-desc {
+    font-size: 0.85rem; color: #bbb; line-height: 1.5; white-space: pre-wrap;
+  }
+
+  .embed-tag {
+    display: inline-block; margin-top: 0.5rem; margin-right: 0.5rem;
+    padding: 0.2rem 0.5rem; background: #1a1a1a; border: 1px solid #333;
+    border-radius: 4px; font-size: 0.7rem; color: #888;
+  }
+
+  .loading { text-align: center; padding: 3rem; color: #666; }
+  .error { text-align: center; padding: 3rem; color: #f87171; }
+
+  @media (max-width: 600px) {
+    .photo-header { flex-direction: column; }
+    .photo-thumb { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link" href="javascript:history.back()">&larr; Back to search</a>
+  <div id="content"><div class="loading">Loading photo details...</div></div>
+</div>
+<script>
+const contentEl = document.getElementById('content');
+const params = new URLSearchParams(window.location.search);
+const imagePath = params.get('path') || '';
+
+if (!imagePath) {
+  contentEl.innerHTML = '<div class="error">No photo path specified.</div>';
+} else {
+  loadPhoto();
+}
+
+async function loadPhoto() {
+  try {
+    const resp = await fetch('/metadata?path=' + encodeURIComponent(imagePath));
+    const data = await resp.json();
+
+    if (data.status !== 'ok') {
+      contentEl.innerHTML = `<div class="error">${escapeHtml(data.message || 'Failed to load metadata')}</div>`;
+      return;
+    }
+
+    const meta = data.metadata;
+    const hasThumbnail = data.has_thumbnail;
+    const filename = imagePath.split('/').pop();
+    const dir = imagePath.substring(0, imagePath.length - filename.length);
+    const thumbUrl = '/thumbnail?path=' + encodeURIComponent(imagePath);
+
+    let html = '';
+
+    // Header with thumbnail and file info
+    html += '<div class="photo-header">';
+    html += '<div class="photo-thumb">';
+    if (hasThumbnail) {
+      html += `<img src="${thumbUrl}" alt="${escapeHtml(filename)}">`;
+    } else {
+      html += '<div class="no-thumb">No thumbnail available</div>';
+    }
+    html += '</div>';
+    html += '<div class="photo-title-area">';
+    html += `<div class="photo-filename">${escapeHtml(filename)}</div>`;
+    html += `<div class="photo-path">${escapeHtml(dir)}</div>`;
+    html += '<div class="photo-actions">';
+    html += `<div class="open-menu-wrapper">
+      <button onclick="toggleOpenMenu(event)">Open with...</button>
+      <div id="openMenu" class="open-menu"></div>
+    </div>`;
+    html += `<button onclick="revealFile()">Reveal in Finder</button>`;
+    html += `<a href="/thumbnail?path=${encodeURIComponent(imagePath)}" target="_blank">View thumbnail</a>`;
+    if (meta.content_hash) {
+      html += `<span class="embed-tag">Hash: ${escapeHtml(meta.content_hash.substring(0, 20))}...</span>`;
+    }
+    html += '</div></div></div>';
+
+    // EXIF section — collect from first vision result that has exif
+    const visionResults = meta.vision_results || {};
+    let exifData = null;
+    for (const v of Object.values(visionResults)) {
+      if (v.exif && Object.keys(v.exif).length > 0) {
+        exifData = v.exif;
+        break;
+      }
+    }
+
+    if (exifData) {
+      html += '<div class="section">';
+      html += '<div class="section-title">EXIF Metadata</div>';
+      html += '<div class="exif-grid">';
+      const exifLabels = {
+        cameraMake: 'Camera Make', cameraModel: 'Camera Model', lens: 'Lens',
+        focalLength: 'Focal Length', aperture: 'Aperture', shutterSpeed: 'Shutter Speed',
+        isoSpeedRating: 'ISO', exposureBias: 'Exposure Bias', dateTimeOriginal: 'Date Taken',
+        gps: 'GPS Location', fileName: 'File Name', fileType: 'File Type',
+        dimensions: 'Dimensions', title: 'Title', caption: 'Caption',
+        keywords: 'Keywords', label: 'Label', rating: 'Rating',
+      };
+      for (const [key, label] of Object.entries(exifLabels)) {
+        const val = exifData[key];
+        if (val && String(val).trim()) {
+          html += `<div class="exif-item">
+            <div class="exif-label">${escapeHtml(label)}</div>
+            <div class="exif-value">${escapeHtml(String(val))}</div>
+          </div>`;
+        }
+      }
+      html += '</div></div>';
+    }
+
+    // Vision descriptions per model
+    html += '<div class="section">';
+    html += '<div class="section-title">Vision Descriptions</div>';
+    for (const [modelLabel, vData] of Object.entries(visionResults)) {
+      html += '<div class="model-section">';
+      html += `<div class="model-label">${escapeHtml(modelLabel)}</div>`;
+      if (vData.processed_at) {
+        html += `<div class="model-meta">Processed: ${escapeHtml(vData.processed_at)}</div>`;
+      }
+      const desc = vData.vision_description || vData.full_description || '';
+      html += `<div class="model-desc">${escapeHtml(desc)}</div>`;
+
+      // Embeddings info
+      const embeddings = vData.embeddings || {};
+      for (const [eLabel, eData] of Object.entries(embeddings)) {
+        html += `<div class="embed-tag">${escapeHtml(eLabel)}: ${escapeHtml(String(eData.embedding || ''))}</div>`;
+        if (eData.processed_at) {
+          html += `<span class="embed-tag">Embedded: ${escapeHtml(eData.processed_at)}</span>`;
+        }
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+
+    contentEl.innerHTML = html;
+    document.title = filename + ' - LrCEmbedIndex';
+
+  } catch (err) {
+    contentEl.innerHTML = `<div class="error">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+let appsLoaded = false;
+
+function toggleOpenMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('openMenu');
+  const showing = menu.classList.toggle('show');
+  if (showing && !appsLoaded) loadApps();
+}
+
+document.addEventListener('click', () => {
+  const menu = document.getElementById('openMenu');
+  if (menu) menu.classList.remove('show');
+});
+
+async function loadApps() {
+  const menu = document.getElementById('openMenu');
+  menu.innerHTML = '<div class="open-menu-item" style="color:#666">Loading...</div>';
+  try {
+    const resp = await fetch('/apps');
+    const data = await resp.json();
+    menu.innerHTML = '';
+
+    // Default app option
+    const def = document.createElement('button');
+    def.className = 'open-menu-item';
+    def.textContent = 'Default app';
+    def.onclick = () => openWith(null);
+    menu.appendChild(def);
+
+    if (data.apps && data.apps.length > 0) {
+      const div = document.createElement('div');
+      div.className = 'open-menu-divider';
+      menu.appendChild(div);
+      for (const app of data.apps) {
+        const btn = document.createElement('button');
+        btn.className = 'open-menu-item';
+        btn.textContent = app.name;
+        btn.onclick = () => openWith(app.path);
+        menu.appendChild(btn);
+      }
+    }
+    appsLoaded = true;
+  } catch (err) {
+    menu.innerHTML = '<div class="open-menu-item" style="color:#f87171">Failed to load apps</div>';
+  }
+}
+
+async function openWith(appPath) {
+  document.getElementById('openMenu').classList.remove('show');
+  try {
+    const body = { path: imagePath, action: 'open' };
+    if (appPath) body.app = appPath;
+    const resp = await fetch('/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.status !== 'ok') alert(data.message || 'Failed to open file');
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+async function revealFile() {
+  try {
+    const resp = await fetch('/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: imagePath, action: 'reveal' }),
+    });
+    const data = await resp.json();
+    if (data.status !== 'ok') alert(data.message || 'Failed to reveal file');
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

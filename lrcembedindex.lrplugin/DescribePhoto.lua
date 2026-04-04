@@ -30,7 +30,6 @@ local function describePhoto()
 
         local photo = selectedPhotos[1]
         local imagePath = photo:getRawMetadata( "path" ) or ""
-        local fileName = photo:getFormattedMetadata( "fileName" ) or "photo"
 
         local thumbnailPixels, thumbnailErr = utils.requestThumbnail( photo )
 
@@ -53,7 +52,7 @@ local function describePhoto()
             { field = 'X-Exif-Data', value = exifEncoded },
         }
 
-        local response, hdrs = LrHttp.post(
+        local response = LrHttp.post(
             serverUrl .. "/describe",
             function() return thumbnailPixels end,
             headers,
@@ -75,42 +74,9 @@ local function describePhoto()
             return
         end
 
-        local descriptions = data.descriptions or {}
-        local elapsed = data.elapsed or 0
-        local cached = data.cached or false
-
-        if #descriptions == 0 then
-            LrDialogs.message( "Photo Description — " .. fileName,
-                "(no description available)", "info" )
-            return
-        end
-
-        -- Build display text with all available descriptions
-        local parts = {}
-        if cached then
-            table.insert( parts, string.format( "%d cached model(s), %.1fs\n", #descriptions, elapsed ) )
-        else
-            table.insert( parts, string.format( "New description generated, %.1fs\n", elapsed ) )
-        end
-
-        for i, entry in ipairs( descriptions ) do
-            local model = entry.vision_model or "unknown"
-            local processedAt = entry.processed_at or ""
-            local desc = entry.vision_description or "(no description)"
-
-            if i > 1 then
-                table.insert( parts, "\n————————————————————————————————\n\n" )
-            end
-            table.insert( parts, "Model: " .. model )
-            if processedAt ~= "" then
-                table.insert( parts, "  (" .. processedAt .. ")" )
-            end
-            table.insert( parts, "\n\n" .. desc .. "\n" )
-        end
-
-        LrDialogs.message( "Photo Description — " .. fileName,
-            table.concat( parts ),
-            "info" )
+        -- Open the photo detail page in the browser
+        local detailUrl = serverUrl .. "/photo?path=" .. utils.percentEncode( imagePath )
+        LrHttp.openUrlInBrowser( detailUrl )
     end )
 end
 

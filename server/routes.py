@@ -1,8 +1,10 @@
 import json
 import logging
+import subprocess
 import tempfile
 import time
 import os
+import sys
 from urllib.parse import unquote
 
 from flask import Blueprint, request, jsonify, send_file, render_template
@@ -29,6 +31,34 @@ api = Blueprint("api", __name__)
 def search_ui():
     """Serve the search web UI."""
     return render_template("search.html")
+
+
+@api.route("/photo", methods=["GET"])
+def photo_detail_ui():
+    """Serve the photo detail page."""
+    return render_template("photo.html")
+
+
+@api.route("/metadata", methods=["GET"])
+def get_metadata():
+    """Return the full metadata JSON for an image path."""
+    image_path = request.args.get("path", "")
+    if not image_path:
+        return jsonify({"status": "error", "message": "Missing 'path' parameter"}), 400
+
+    meta = load_photo_metadata(image_path)
+    if not meta:
+        return jsonify({"status": "error", "message": "No metadata found"}), 404
+
+    # Strip embedding vectors to keep response small
+    safe_meta = json.loads(json.dumps(meta))
+    for v_label, v_data in safe_meta.get("vision_results", {}).items():
+        for e_label, e_data in v_data.get("embeddings", {}).items():
+            if "embedding" in e_data:
+                e_data["embedding"] = f"[{len(e_data['embedding'])} dimensions]"
+
+    return jsonify({"status": "ok", "metadata": safe_meta,
+                    "has_thumbnail": has_thumbnail(image_path)})
 
 
 @api.route("/describe", methods=["POST"])
@@ -423,3 +453,66 @@ def get_thumbnail():
         return jsonify({"status": "error", "message": "No thumbnail found"}), 404
 
     return send_file(thumb_path, mimetype="image/jpeg")
+
+
+KNOWN_PHOTO_APPS = [
+    ("Adobe Lightroom Classic", "/Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app"),
+    ("Adobe Photoshop", "/Applications/Adobe Photoshop 2025/Adobe Photoshop 2025.app"),
+    ("Adobe Photoshop", "/Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app"),
+    ("Adobe Bridge", "/Applications/Adobe Bridge 2025/Adobe Bridge 2025.app"),
+    ("Adobe Bridge", "/Applications/Adobe Bridge 2024/Adobe Bridge 2024.app"),
+    ("Affinity Photo 2", "/Applications/Affinity Photo 2.app"),
+    ("Capture One", "/Applications/Capture One.app"),
+    ("DxO PhotoLab", "/Applications/DxO PhotoLab 8.app"),
+    ("DxO PhotoLab", "/Applications/DxO PhotoLab 7.app"),
+    ("Photos", "/Applications/Photos.app"),
+    ("Preview", "/Applications/Preview.app"),
+]
+
+
+@api.route("/apps", methods=["GET"])
+def list_apps():
+    """Return a list of installed photo applications."""
+    installed = []
+    seen = set()
+    if sys.platform == "darwin":
+        for name, path in KNOWN_PHOTO_APPS:
+            if name not in seen and os.path.exists(path):
+                installed.append({"name": name, "path": path})
+                seen.add(name)
+    return jsonify({"status": "ok", "apps": installed})
+
+
+@api.route("/open", methods=["POST"])
+def open_file():
+    """Open or reveal a photo file on the local machine."""
+    data = request.get_json()
+    if not data or "path" not in data:
+        return jsonify({"status": "error", "message": "Missing 'path'"}), 400
+
+    file_path = data["path"]
+    action = data.get("action", "open")
+    app_path = data.get("app")
+
+    if not os.path.exists(file_path):
+        return jsonify({"status": "error", "message": "File not found"}), 404
+
+    try:
+        if sys.platform == "darwin":
+            if action == "reveal":
+                subprocess.Popen(["open", "-R", file_path])
+            elif app_path:
+                subprocess.Popen(["open", "-a", app_path, file_path])
+            else:
+                subprocess.Popen(["open", file_path])
+        elif sys.platform == "win32":
+            if action == "reveal":
+                subprocess.Popen(["explorer", "/select,", file_path])
+            else:
+                os.startfile(file_path)
+        else:
+            subprocess.Popen(["xdg-open", file_path])
+
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
