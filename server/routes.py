@@ -5,18 +5,20 @@ import time
 import os
 from urllib.parse import unquote
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 
 from config import (config, get_vision_model_label, get_embed_model_label,
                     save_config, save_last_config_pointer)
 from metadata import (load_photo_metadata, save_photo_metadata,
                       get_vision_result, set_vision_result,
                       get_embed_result, set_embed_result,
-                      count_metadata_files, collect_metadata_stats)
+                      count_metadata_files, collect_metadata_stats,
+                      save_thumbnail, has_thumbnail,
+                      thumbnail_path_for_image)
 from vectorstore import init_chromadb, upsert_photo, search_photos, get_chromadb_stats
 from vision import describe_image
 from embedding import get_embedding
-from helpers import exif_to_text, compute_content_hash
+from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,12 @@ def describe_photo():
                 set_vision_result(meta, vision_label, vision_description,
                                   exif_data, full_description)
                 save_photo_metadata(image_path, meta)
+
+                # Store thumbnail if configured
+                thumb_size = config.get("thumbnail_store_size", 512)
+                if thumb_size > 0 and not has_thumbnail(image_path):
+                    small_thumb = resize_thumbnail_bytes(jpeg_data, max_size=thumb_size)
+                    save_thumbnail(image_path, small_thumb)
 
             elapsed = time.time() - t_start
             logger.info(f"POST /describe completed in {elapsed:.1f}s — {image_path}")
@@ -220,6 +228,12 @@ def index_photo():
             # Persist metadata
             save_photo_metadata(image_path, existing)
 
+            # Store thumbnail if configured
+            thumb_size = config.get("thumbnail_store_size", 512)
+            if thumb_size > 0 and not has_thumbnail(image_path):
+                small_thumb = resize_thumbnail_bytes(jpeg_data, max_size=thumb_size)
+                save_thumbnail(image_path, small_thumb)
+
             # Always upsert to ChromaDB — we don't know which model pair
             # produced the current entry, so keep it in sync
             try:
@@ -329,6 +343,10 @@ def update_settings():
         if "search_relevance" in data:
             config["search_relevance"] = max(0, min(100, int(data["search_relevance"])))
 
+        # Thumbnail settings
+        if "thumbnail_store_size" in data:
+            config["thumbnail_store_size"] = max(0, int(data["thumbnail_store_size"]))
+
         save_config()
         save_last_config_pointer()
 
@@ -370,6 +388,7 @@ def get_stats():
             "status": "ok",
             "metadata": {
                 "total_files": meta_count,
+                "thumbnail_files": meta_stats.get("thumbnail_count", 0),
                 "vision_models": meta_stats.get("vision_models", {}),
                 "embed_models": meta_stats.get("embed_models", {}),
                 "oldest_entry": meta_stats.get("oldest_entry"),
@@ -384,3 +403,17 @@ def get_stats():
         elapsed = time.time() - t_start
         logger.exception(f"GET /stats failed in {elapsed:.1f}s: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api.route("/thumbnail", methods=["GET"])
+def get_thumbnail():
+    """Return the stored thumbnail JPEG for an image path."""
+    image_path = request.args.get("path", "")
+    if not image_path:
+        return jsonify({"status": "error", "message": "Missing 'path' parameter"}), 400
+
+    thumb_path = thumbnail_path_for_image(image_path)
+    if not thumb_path or not os.path.exists(thumb_path):
+        return jsonify({"status": "error", "message": "No thumbnail found"}), 404
+
+    return send_file(thumb_path, mimetype="image/jpeg")
