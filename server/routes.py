@@ -58,6 +58,12 @@ def collection_page():
     return render_template("collection.html")
 
 
+@api.route("/stats-ui", methods=["GET"])
+def stats_ui():
+    """Serve the stats dashboard page."""
+    return render_template("stats.html")
+
+
 @api.route("/privacy", methods=["GET"])
 def privacy_page():
     """Serve the privacy policy page."""
