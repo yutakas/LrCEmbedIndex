@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LrCEmbedIndex Search</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 0.5rem; color: #fff; }
+  h1 span { color: #888; font-weight: 300; }
+
+  .model-info {
+    display: flex; gap: 1rem; flex-wrap: wrap;
+    margin-bottom: 1.5rem; font-size: 0.75rem; color: #666;
+  }
+  .model-info .tag {
+    background: #2a2a2a; border: 1px solid #333; border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+  }
+  .model-info .tag .label { color: #555; }
+  .model-info .tag .value { color: #999; }
+
+  .search-box {
+    display: flex; gap: 0.5rem; margin-bottom: 1.5rem;
+  }
+  .search-box input {
+    flex: 1; padding: 0.75rem 1rem; font-size: 1rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
+    color: #fff; outline: none; transition: border-color 0.2s;
+  }
+  .search-box input:focus { border-color: #6b8afd; }
+  .search-box input::placeholder { color: #666; }
+  .search-box button {
+    padding: 0.75rem 1.5rem; font-size: 1rem; font-weight: 500;
+    background: #6b8afd; color: #fff; border: none; border-radius: 8px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .search-box button:hover { background: #5a7af0; }
+  .search-box button:disabled { background: #444; cursor: not-allowed; }
+
+  .status {
+    text-align: center; padding: 1rem; color: #888; font-size: 0.9rem;
+  }
+  .status.error { color: #f87171; }
+
+  .results { display: flex; flex-direction: column; gap: 1rem; }
+
+  .result-card {
+    display: flex; gap: 1rem; padding: 1rem;
+    background: #242424; border-radius: 10px;
+    border: 1px solid #333; transition: border-color 0.2s;
+  }
+  .result-card:hover { border-color: #555; }
+
+  .thumb-container {
+    flex-shrink: 0; width: 160px; height: 120px;
+    border-radius: 6px; overflow: hidden; background: #333;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb-container img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .thumb-container .no-thumb {
+    font-size: 0.75rem; color: #555; text-align: center;
+  }
+
+  .result-info { flex: 1; min-width: 0; }
+  .result-filename {
+    font-weight: 600; font-size: 0.95rem; color: #fff;
+    margin-bottom: 0.25rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .result-path {
+    font-size: 0.75rem; color: #666; margin-bottom: 0.5rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .result-description {
+    font-size: 0.85rem; color: #aaa; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .result-distance {
+    font-size: 0.7rem; color: #555; margin-top: 0.5rem;
+  }
+
+  @media (max-width: 600px) {
+    .result-card { flex-direction: column; }
+    .thumb-container { width: 100%; height: 200px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LrCEmbedIndex <span>Search</span></h1>
+  <div id="modelInfo" class="model-info"></div>
+  <div class="search-box">
+    <input type="text" id="query" placeholder="Describe the photo you're looking for..." autofocus>
+    <button id="searchBtn" onclick="doSearch()">Search</button>
+  </div>
+  <div id="status"></div>
+  <div id="results" class="results"></div>
+</div>
+<script>
+const queryInput = document.getElementById('query');
+const searchBtn = document.getElementById('searchBtn');
+const statusEl = document.getElementById('status');
+const resultsEl = document.getElementById('results');
+const modelInfoEl = document.getElementById('modelInfo');
+
+queryInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doSearch();
+});
+
+async function loadModelInfo() {
+  try {
+    const resp = await fetch('/stats');
+    const data = await resp.json();
+    if (data.status === 'ok' && data.config) {
+      const c = data.config;
+      const vision = c.vision_mode === 'openai' ? `openai:${c.openai_vision_model}`
+        : c.vision_mode === 'claude' ? `claude:${c.claude_vision_model}`
+        : `ollama:${c.ollama_vision_model}`;
+      const embed = c.embed_mode === 'openai' ? `openai:${c.openai_embed_model}`
+        : c.embed_mode === 'voyage' ? `voyage:${c.voyage_embed_model}`
+        : `ollama:${c.ollama_embed_model}`;
+      const endpoint = c.embed_mode === 'openai' ? 'api.openai.com'
+        : c.embed_mode === 'voyage' ? 'api.voyageai.com'
+        : c.ollama_embed_endpoint;
+      const indexed = data.metadata?.total_files || 0;
+      const thumbs = data.metadata?.thumbnail_files || 0;
+
+      modelInfoEl.innerHTML = `
+        <div class="tag"><span class="label">Vision:</span> <span class="value">${escapeHtml(vision)}</span></div>
+        <div class="tag"><span class="label">Embed:</span> <span class="value">${escapeHtml(embed)}</span></div>
+        <div class="tag"><span class="label">Endpoint:</span> <span class="value">${escapeHtml(endpoint)}</span></div>
+        <div class="tag"><span class="label">Indexed:</span> <span class="value">${indexed} photos</span></div>
+        <div class="tag"><span class="label">Thumbnails:</span> <span class="value">${thumbs}</span></div>
+      `;
+    }
+  } catch (e) {}
+}
+loadModelInfo();
+
+async function doSearch() {
+  const query = queryInput.value.trim();
+  if (!query) return;
+
+  searchBtn.disabled = true;
+  statusEl.className = 'status';
+  statusEl.textContent = 'Searching...';
+  resultsEl.innerHTML = '';
+
+  try {
+    const resp = await fetch('/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query, max_results: 5 }),
+    });
+    const data = await resp.json();
+
+    if (data.status !== 'ok') {
+      statusEl.className = 'status error';
+      statusEl.textContent = data.message || 'Search failed';
+      return;
+    }
+
+    if (data.results.length === 0) {
+      statusEl.textContent = `No results found (${data.elapsed}s)`;
+      return;
+    }
+
+    statusEl.textContent = `${data.results.length} result${data.results.length > 1 ? 's' : ''} in ${data.elapsed}s`;
+
+    for (const r of data.results) {
+      const filename = r.path.split('/').pop();
+      const dir = r.path.substring(0, r.path.length - filename.length);
+      const desc = extractVisionDescription(r.description);
+      const thumbUrl = '/thumbnail?path=' + encodeURIComponent(r.path);
+
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.innerHTML = `
+        <div class="thumb-container">
+          <img src="${thumbUrl}" alt="${filename}" onerror="this.outerHTML='<div class=no-thumb>No thumbnail</div>'">
+        </div>
+        <div class="result-info">
+          <div class="result-filename">${escapeHtml(filename)}</div>
+          <div class="result-path" title="${escapeHtml(r.path)}">${escapeHtml(dir)}</div>
+          <div class="result-description">${escapeHtml(desc)}</div>
+          <div class="result-distance">distance: ${r.distance.toFixed(4)}</div>
+        </div>
+      `;
+      resultsEl.appendChild(card);
+    }
+  } catch (err) {
+    statusEl.className = 'status error';
+    statusEl.textContent = 'Error: ' + err.message;
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+function extractVisionDescription(full) {
+  const sep = full.indexOf('\n\n--- Photo Metadata ---');
+  return sep > 0 ? full.substring(0, sep) : full;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

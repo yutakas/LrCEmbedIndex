@@ -5,7 +5,7 @@ import time
 import os
 from urllib.parse import unquote
 
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, render_template
 
 from config import (config, get_vision_model_label, get_embed_model_label,
                     save_config, save_last_config_pointer)
@@ -23,6 +23,12 @@ from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
 logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__)
+
+
+@api.route("/", methods=["GET"])
+def search_ui():
+    """Serve the search web UI."""
+    return render_template("search.html")
 
 
 @api.route("/describe", methods=["POST"])
