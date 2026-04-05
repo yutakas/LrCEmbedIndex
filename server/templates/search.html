@@ -160,6 +160,7 @@
   <div class="footer">
     <span id="versionInfo"></span>
     <span>
+      <a href="/stats-ui">Stats</a>
       <a href="/privacy">Privacy</a>
       <a href="/licenses">Licenses</a>
     </span>
@@ -292,6 +293,13 @@ function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Auto-search if ?q= is in the URL
+const urlQ = new URLSearchParams(window.location.search).get('q');
+if (urlQ) {
+  queryInput.value = urlQ;
+  doSearch();
 }
 </script>
 </body>

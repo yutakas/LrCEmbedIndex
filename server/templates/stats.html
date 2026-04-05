@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stats - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 1.5rem; color: #fff; }
+  h1 span { color: #888; font-weight: 300; }
+
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem; margin-bottom: 2rem;
+  }
+  .card {
+    background: #242424; border: 1px solid #333; border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .card-label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card-value { font-size: 1.8rem; font-weight: 600; color: #fff; margin-top: 0.25rem; }
+  .card-sub { font-size: 0.75rem; color: #555; margin-top: 0.25rem; }
+
+  .section {
+    margin-bottom: 1.5rem;
+  }
+  .section-title {
+    font-size: 0.85rem; font-weight: 600; color: #999; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid #333;
+  }
+
+  .table-wrap {
+    background: #242424; border-radius: 8px; overflow: hidden;
+    border: 1px solid #333;
+  }
+  table {
+    width: 100%; border-collapse: collapse;
+  }
+  th {
+    text-align: left; padding: 0.6rem 1rem;
+    font-size: 0.75rem; color: #666; text-transform: uppercase;
+    background: #1e1e1e; border-bottom: 1px solid #333;
+  }
+  td {
+    padding: 0.6rem 1rem; font-size: 0.85rem; color: #ccc;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  .config-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.5rem;
+  }
+  .config-item {
+    background: #242424; border-radius: 6px; padding: 0.5rem 0.75rem;
+  }
+  .config-key { font-size: 0.7rem; color: #666; font-family: monospace; }
+  .config-val { font-size: 0.85rem; color: #ccc; margin-top: 0.15rem; word-break: break-all; }
+
+  .loading { text-align: center; padding: 3rem; color: #666; }
+  .error { text-align: center; padding: 3rem; color: #f87171; }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LrCEmbedIndex <span>Stats</span></h1>
+  <div id="content"><div class="loading">Loading stats...</div></div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/">Search</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
+</div>
+<script>
+const contentEl = document.getElementById('content');
+
+async function loadStats() {
+  try {
+    const resp = await fetch('/stats');
+    const data = await resp.json();
+
+    if (data.status !== 'ok') {
+      contentEl.innerHTML = `<div class="error">${escapeHtml(data.message || 'Failed to load stats')}</div>`;
+      return;
+    }
+
+    if (data.version) {
+      document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + data.version;
+    }
+
+    const meta = data.metadata || {};
+    const chroma = data.chromadb || {};
+    const cfg = data.config || {};
+
+    let html = '';
+
+    // Summary cards
+    html += '<div class="cards">';
+    html += card('Indexed Photos', meta.total_files || 0);
+    html += card('Thumbnails', meta.thumbnail_files || 0);
+    html += card('ChromaDB Vectors', chroma.current_count || 0);
+    html += card('Response Time', (data.elapsed || 0) + 's');
+    html += '</div>';
+
+    // Date range
+    if (meta.oldest_entry || meta.newest_entry) {
+      html += '<div class="cards">';
+      if (meta.oldest_entry) html += card('Oldest Entry', formatDate(meta.oldest_entry));
+      if (meta.newest_entry) html += card('Newest Entry', formatDate(meta.newest_entry));
+      html += '</div>';
+    }
+
+    // Vision models
+    const visionModels = meta.vision_models || {};
+    if (Object.keys(visionModels).length > 0) {
+      html += '<div class="section">';
+      html += '<div class="section-title">Vision Models</div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<tr><th>Model</th><th>Photos</th></tr>';
+      for (const [model, count] of Object.entries(visionModels)) {
+        html += `<tr><td>${escapeHtml(model)}</td><td>${count}</td></tr>`;
+      }
+      html += '</table></div></div>';
+    }
+
+    // Embedding models
+    const embedModels = meta.embed_models || {};
+    if (Object.keys(embedModels).length > 0) {
+      html += '<div class="section">';
+      html += '<div class="section-title">Embedding Models</div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<tr><th>Vision / Embed Pipeline</th><th>Photos</th></tr>';
+      for (const [pipeline, count] of Object.entries(embedModels)) {
+        html += `<tr><td>${escapeHtml(pipeline)}</td><td>${count}</td></tr>`;
+      }
+      html += '</table></div></div>';
+    }
+
+    // ChromaDB stores
+    const stores = chroma.all_stores || [];
+    if (stores.length > 0) {
+      html += '<div class="section">';
+      html += '<div class="section-title">ChromaDB Stores</div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<tr><th>Model</th><th>Vectors</th></tr>';
+      for (const s of stores) {
+        const isCurrent = chroma.current_path && chroma.current_path.endsWith(s.model_dir);
+        const label = s.model_dir + (isCurrent ? ' (active)' : '');
+        html += `<tr><td>${escapeHtml(label)}</td><td>${s.count}</td></tr>`;
+      }
+      html += '</table></div></div>';
+    }
+
+    // Configuration
+    const configKeys = Object.keys(cfg).filter(k => !k.includes('api_key'));
+    if (configKeys.length > 0) {
+      html += '<div class="section">';
+      html += '<div class="section-title">Configuration</div>';
+      html += '<div class="config-grid">';
+      for (const k of configKeys) {
+        const v = cfg[k];
+        html += `<div class="config-item">
+          <div class="config-key">${escapeHtml(k)}</div>
+          <div class="config-val">${escapeHtml(String(v))}</div>
+        </div>`;
+      }
+      html += '</div></div>';
+    }
+
+    contentEl.innerHTML = html;
+
+  } catch (err) {
+    contentEl.innerHTML = `<div class="error">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function card(label, value, sub) {
+  return `<div class="card">
+    <div class="card-label">${escapeHtml(label)}</div>
+    <div class="card-value">${escapeHtml(String(value))}</div>
+    ${sub ? '<div class="card-sub">' + escapeHtml(sub) + '</div>' : ''}
+  </div>`;
+}
+
+function formatDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+  } catch (e) { return iso; }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+loadStats();
+</script>
+</body>
+</html>
