@@ -5,6 +5,7 @@ import tempfile
 import time
 import os
 import sys
+from functools import wraps
 from urllib.parse import unquote
 
 from flask import Blueprint, request, jsonify, send_file, render_template
@@ -27,6 +28,34 @@ from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
 logger = logging.getLogger(__name__)
 
 api = Blueprint("api", __name__)
+
+# ---------------------------------------------------------------------------
+# Patrol interrupt support (must be defined before routes that use them)
+# ---------------------------------------------------------------------------
+
+# Module-level reference; set by server.py after patrol worker is created
+_patrol_worker = None
+
+
+def set_patrol_worker(worker):
+    """Called by server.py to register the patrol worker for interrupt support."""
+    global _patrol_worker
+    _patrol_worker = worker
+
+
+def with_patrol_interrupt(f):
+    """Decorator that pauses patrol during Lightroom API calls."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        worker = _patrol_worker
+        if worker and worker.is_active():
+            worker.interrupt()
+        try:
+            return f(*args, **kwargs)
+        finally:
+            if worker:
+                worker.clear_interrupt()
+    return wrapper
 
 
 @api.after_request
@@ -76,6 +105,33 @@ def licenses_page():
     return render_template("licenses.html")
 
 
+@api.route("/settings-ui", methods=["GET"])
+def settings_ui():
+    """Serve the settings web UI page."""
+    return render_template("settings.html")
+
+
+@api.route("/settings", methods=["GET"])
+def get_settings():
+    """Return current config with API keys masked."""
+    safe = {}
+    for k, v in config.items():
+        if "api_key" in k and v:
+            safe[k] = "****" + v[-4:] if len(v) > 4 else "****"
+        else:
+            safe[k] = v
+    return jsonify({"status": "ok", "config": safe, "version": VERSION})
+
+
+@api.route("/settings/sync", methods=["GET"])
+def sync_settings():
+    """Return full config including API keys (for Lightroom plugin sync).
+
+    This endpoint is localhost-only (enforced by Flask binding to 127.0.0.1).
+    """
+    return jsonify({"status": "ok", "config": dict(config)})
+
+
 @api.route("/metadata", methods=["GET"])
 def get_metadata():
     """Return the full metadata JSON for an image path."""
@@ -99,6 +155,7 @@ def get_metadata():
 
 
 @api.route("/describe", methods=["POST"])
+@with_patrol_interrupt
 def describe_photo():
     """Vision-only endpoint: return all cached descriptions, or call API if none exist."""
     t_start = time.time()
@@ -204,6 +261,7 @@ def describe_photo():
 
 
 @api.route("/index", methods=["POST"])
+@with_patrol_interrupt
 def index_photo():
     t_start = time.time()
     try:
@@ -424,6 +482,16 @@ def update_settings():
         if "strip_gps_for_cloud" in data:
             config["strip_gps_for_cloud"] = bool(data["strip_gps_for_cloud"])
 
+        # Patrol settings
+        if "patrol_enabled" in data:
+            config["patrol_enabled"] = bool(data["patrol_enabled"])
+        if "patrol_folders" in data:
+            config["patrol_folders"] = data["patrol_folders"]
+        if "patrol_interval_minutes" in data:
+            config["patrol_interval_minutes"] = max(1, int(data["patrol_interval_minutes"]))
+        if "patrol_batch_size" in data:
+            config["patrol_batch_size"] = max(1, int(data["patrol_batch_size"]))
+
         save_config()
         save_last_config_pointer()
 
@@ -600,3 +668,52 @@ def delete_metadata():
         return jsonify({"status": "error", "message": "No metadata found"}), 404
 
     return jsonify({"status": "ok", "message": "Photo data deleted"})
+
+
+# ---------------------------------------------------------------------------
+# Patrol control endpoints
+# ---------------------------------------------------------------------------
+
+@api.route("/patrol/status", methods=["GET"])
+def patrol_status():
+    """Return current patrol worker state."""
+    worker = _patrol_worker
+    if not worker:
+        return jsonify({"status": "ok", "patrol": {"state": "not_initialized"}})
+    return jsonify({"status": "ok", "patrol": worker.get_status()})
+
+
+@api.route("/patrol/start", methods=["POST"])
+def patrol_start():
+    """Start or resume the patrol worker."""
+    worker = _patrol_worker
+    if not worker:
+        return jsonify({"status": "error", "message": "Patrol worker not initialized"}), 500
+    config["patrol_enabled"] = True
+    save_config()
+    save_last_config_pointer()
+    worker.start()
+    return jsonify({"status": "ok", "patrol": worker.get_status()})
+
+
+@api.route("/patrol/pause", methods=["POST"])
+def patrol_pause():
+    """Pause the patrol worker (finishes current photo first)."""
+    worker = _patrol_worker
+    if not worker:
+        return jsonify({"status": "error", "message": "Patrol worker not initialized"}), 500
+    worker.pause()
+    return jsonify({"status": "ok", "patrol": worker.get_status()})
+
+
+@api.route("/patrol/stop", methods=["POST"])
+def patrol_stop():
+    """Stop the patrol worker."""
+    worker = _patrol_worker
+    if not worker:
+        return jsonify({"status": "error", "message": "Patrol worker not initialized"}), 500
+    config["patrol_enabled"] = False
+    save_config()
+    save_last_config_pointer()
+    worker.stop()
+    return jsonify({"status": "ok", "patrol": worker.get_status()})
