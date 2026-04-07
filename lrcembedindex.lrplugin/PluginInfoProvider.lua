@@ -405,11 +405,63 @@ local function sectionsForTopOfDialog( f, propertyTable )
             },
         },
 
-        -- Save button
+        -- Sync & Save
         {
             title = "LrC Embed Index — Apply",
 
             f:row {
+                f:push_button {
+                    title = "Load from Server",
+                    action = function( button )
+                        local response, hdrs = LrHttp.get(
+                            propertyTable.serverUrl .. "/settings/sync",
+                            nil,
+                            1000
+                        )
+                        if not response then
+                            LrDialogs.message( "Error", "Could not connect to the server.", "critical" )
+                            return
+                        end
+                        local data, pos, err = json.decode( response )
+                        if not data or data.status ~= "ok" or not data.config then
+                            LrDialogs.message( "Error", "Invalid response from server.", "critical" )
+                            return
+                        end
+                        local c = data.config
+
+                        -- Update property table with server values
+                        if c.index_folder then propertyTable.indexFolder = c.index_folder end
+                        if c.search_max_results then propertyTable.searchMaxResults = c.search_max_results end
+                        if c.search_relevance then propertyTable.searchRelevance = c.search_relevance end
+
+                        if c.vision_mode then propertyTable.visionMode = c.vision_mode end
+                        if c.ollama_vision_endpoint then propertyTable.ollamaVisionEndpoint = c.ollama_vision_endpoint end
+                        if c.ollama_vision_model then propertyTable.ollamaVisionModel = c.ollama_vision_model end
+                        if c.openai_vision_api_key and c.openai_vision_api_key ~= "" then
+                            propertyTable.openaiVisionApiKey = c.openai_vision_api_key
+                        end
+                        if c.openai_vision_model then propertyTable.openaiVisionModel = c.openai_vision_model end
+                        if c.claude_vision_api_key and c.claude_vision_api_key ~= "" then
+                            propertyTable.claudeVisionApiKey = c.claude_vision_api_key
+                        end
+                        if c.claude_vision_model then propertyTable.claudeVisionModel = c.claude_vision_model end
+
+                        if c.embed_mode then propertyTable.embedMode = c.embed_mode end
+                        if c.ollama_embed_endpoint then propertyTable.ollamaEmbedEndpoint = c.ollama_embed_endpoint end
+                        if c.ollama_embed_model then propertyTable.ollamaEmbedModel = c.ollama_embed_model end
+                        if c.openai_embed_api_key and c.openai_embed_api_key ~= "" then
+                            propertyTable.openaiEmbedApiKey = c.openai_embed_api_key
+                        end
+                        if c.openai_embed_model then propertyTable.openaiEmbedModel = c.openai_embed_model end
+                        if c.voyage_embed_api_key and c.voyage_embed_api_key ~= "" then
+                            propertyTable.voyageEmbedApiKey = c.voyage_embed_api_key
+                        end
+                        if c.voyage_embed_model then propertyTable.voyageEmbedModel = c.voyage_embed_model end
+
+                        LrDialogs.message( "Settings Loaded", "Settings have been loaded from the server. Click 'Save & Apply' to confirm.", "info" )
+                    end,
+                },
+
                 f:push_button {
                     title = "Save & Apply Settings",
                     action = function( button )

@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 700px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 1.5rem; color: #fff; }
+  h1 span { color: #888; font-weight: 300; }
+
+  .section {
+    margin-bottom: 1.5rem;
+    background: #242424; border: 1px solid #333; border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .section-title {
+    font-size: 0.85rem; font-weight: 600; color: #999; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 1rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid #333;
+  }
+
+  .field { margin-bottom: 0.75rem; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label {
+    font-size: 0.75rem; color: #888; margin-bottom: 0.25rem;
+    display: block;
+  }
+  .field-row {
+    display: flex; gap: 0.5rem; align-items: center;
+  }
+
+  input[type="text"], input[type="password"], input[type="number"], select {
+    width: 100%; padding: 0.55rem 0.75rem; font-size: 0.9rem;
+    background: #1a1a1a; border: 1px solid #444; border-radius: 6px;
+    color: #fff; outline: none; transition: border-color 0.2s;
+    font-family: inherit;
+  }
+  input:focus, select:focus { border-color: #6b8afd; }
+  select { cursor: pointer; }
+  input[type="number"] { width: 80px; }
+
+  .toggle-wrap {
+    display: flex; align-items: center; gap: 0.5rem; cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .toggle {
+    position: relative; width: 38px; height: 22px; flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .slider {
+    position: absolute; inset: 0; background: #444; border-radius: 22px;
+    transition: background 0.2s; cursor: pointer;
+  }
+  .toggle .slider::before {
+    content: ''; position: absolute; width: 16px; height: 16px;
+    left: 3px; bottom: 3px; background: #ccc; border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle input:checked + .slider { background: #6b8afd; }
+  .toggle input:checked + .slider::before { transform: translateX(16px); background: #fff; }
+
+  .reveal-btn {
+    padding: 0.4rem 0.6rem; font-size: 0.75rem;
+    background: #333; border: 1px solid #555; border-radius: 4px;
+    color: #aaa; cursor: pointer; white-space: nowrap;
+  }
+  .reveal-btn:hover { border-color: #777; color: #ddd; }
+
+  .cloud-notice {
+    font-size: 0.75rem; color: #b08a3e; background: #2a2415;
+    border: 1px solid #443820; border-radius: 6px;
+    padding: 0.5rem 0.75rem; margin-bottom: 0.75rem;
+  }
+
+  /* Patrol folder list */
+  .folder-list { margin-bottom: 0.5rem; }
+  .folder-item {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0; border-bottom: 1px solid #2a2a2a;
+  }
+  .folder-item:last-child { border-bottom: none; }
+  .folder-item input[type="text"] { flex: 1; }
+  .folder-item .toggle { flex-shrink: 0; }
+  .remove-btn {
+    padding: 0.25rem 0.5rem; font-size: 0.75rem;
+    background: none; border: 1px solid #555; border-radius: 4px;
+    color: #f87171; cursor: pointer;
+  }
+  .remove-btn:hover { border-color: #f87171; }
+  .add-btn {
+    padding: 0.4rem 0.75rem; font-size: 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #6b8afd; cursor: pointer;
+  }
+  .add-btn:hover { border-color: #6b8afd; }
+
+  .btn-row {
+    display: flex; gap: 0.5rem; margin-top: 1.5rem;
+  }
+  .save-btn {
+    padding: 0.65rem 1.5rem; font-size: 0.95rem; font-weight: 500;
+    background: #6b8afd; color: #fff; border: none; border-radius: 8px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .save-btn:hover { background: #5a7af0; }
+  .save-btn:disabled { background: #444; cursor: not-allowed; }
+
+  .test-btn {
+    padding: 0.4rem 0.75rem; font-size: 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #aaa; cursor: pointer;
+  }
+  .test-btn:hover { border-color: #6b8afd; color: #6b8afd; }
+
+  .status-msg {
+    margin-top: 0.75rem; font-size: 0.85rem; min-height: 1.2em;
+  }
+  .status-msg.ok { color: #4ade80; }
+  .status-msg.error { color: #f87171; }
+
+  /* Patrol status */
+  .patrol-status {
+    margin-top: 0.75rem; padding: 0.6rem 0.75rem;
+    background: #1a1a1a; border-radius: 6px; font-size: 0.8rem;
+  }
+  .patrol-status .status-label { color: #888; }
+  .patrol-status .status-value { color: #ccc; }
+  .patrol-controls { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .patrol-controls button {
+    padding: 0.35rem 0.75rem; font-size: 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #aaa; cursor: pointer;
+  }
+  .patrol-controls button:hover { border-color: #6b8afd; color: #6b8afd; }
+
+  .loading { text-align: center; padding: 3rem; color: #666; }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LrCEmbedIndex <span>Settings</span></h1>
+  <div id="content"><div class="loading">Loading settings...</div></div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/">Search</a>
+      <a href="/stats-ui">Stats</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
+</div>
+<script>
+const contentEl = document.getElementById('content');
+let currentConfig = {};
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/settings');
+    const data = await resp.json();
+    if (data.status !== 'ok') {
+      contentEl.innerHTML = `<div class="loading" style="color:#f87171">${esc(data.message || 'Failed')}</div>`;
+      return;
+    }
+    currentConfig = data.config;
+    if (data.version) {
+      document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + data.version;
+    }
+    renderForm();
+    loadPatrolStatus();
+  } catch (err) {
+    contentEl.innerHTML = `<div class="loading" style="color:#f87171">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderForm() {
+  const c = currentConfig;
+  let html = '';
+
+  // General
+  html += `<div class="section">
+    <div class="section-title">General</div>
+    <div class="field">
+      <label class="field-label">Index & Metadata Folder</label>
+      <input type="text" id="index_folder" value="${esc(c.index_folder || '')}">
+    </div>
+    <div class="field">
+      <label class="field-label">Search Max Results</label>
+      <input type="number" id="search_max_results" value="${c.search_max_results || 10}" min="1" max="100">
+    </div>
+    <div class="field">
+      <label class="field-label">Relevance Threshold (0=lenient, 100=strict)</label>
+      <div class="field-row">
+        <input type="range" id="search_relevance" min="0" max="100" value="${c.search_relevance || 50}" style="flex:1" oninput="document.getElementById('rel_val').textContent=this.value">
+        <span id="rel_val" style="width:30px;text-align:right;font-size:0.85rem;color:#ccc">${c.search_relevance || 50}</span>
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">Thumbnail Storage Size (px, 0=disable)</label>
+      <input type="number" id="thumbnail_store_size" value="${c.thumbnail_store_size || 512}" min="0" max="2048">
+    </div>
+    <div class="field">
+      <div class="toggle-wrap" onclick="toggleCheck('strip_gps_for_cloud')">
+        <div class="toggle">
+          <input type="checkbox" id="strip_gps_for_cloud" ${c.strip_gps_for_cloud ? 'checked' : ''}>
+          <span class="slider"></span>
+        </div>
+        <span>Strip GPS from EXIF before sending to cloud APIs</span>
+      </div>
+    </div>
+  </div>`;
+
+  // Vision Model
+  html += `<div class="section">
+    <div class="section-title">Vision Model</div>
+    <div class="field">
+      <label class="field-label">Provider</label>
+      <select id="vision_mode" onchange="updateVisibility()">
+        <option value="ollama" ${c.vision_mode==='ollama'?'selected':''}>Ollama</option>
+        <option value="openai" ${c.vision_mode==='openai'?'selected':''}>OpenAI API</option>
+        <option value="claude" ${c.vision_mode==='claude'?'selected':''}>Claude API</option>
+      </select>
+    </div>
+    <div id="vision_cloud_notice" class="cloud-notice" style="display:none">
+      Cloud backends send photo images to third-party API servers.
+    </div>
+    <div id="vision_ollama_fields">
+      <div class="field">
+        <label class="field-label">Ollama Endpoint</label>
+        <input type="text" id="ollama_vision_endpoint" value="${esc(c.ollama_vision_endpoint || 'http://localhost:11434')}">
+      </div>
+      <div class="field">
+        <label class="field-label">Vision Model Name</label>
+        <input type="text" id="ollama_vision_model" value="${esc(c.ollama_vision_model || 'qwen3.5')}">
+      </div>
+    </div>
+    <div id="vision_openai_fields" style="display:none">
+      <div class="field">
+        <label class="field-label">OpenAI API Key</label>
+        <div class="field-row">
+          <input type="password" id="openai_vision_api_key" value="${esc(c.openai_vision_api_key || '')}" placeholder="sk-...">
+          <button class="reveal-btn" onclick="toggleReveal('openai_vision_api_key',this)">Show</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Vision Model Name</label>
+        <input type="text" id="openai_vision_model" value="${esc(c.openai_vision_model || 'gpt-4o')}">
+      </div>
+    </div>
+    <div id="vision_claude_fields" style="display:none">
+      <div class="field">
+        <label class="field-label">Claude API Key</label>
+        <div class="field-row">
+          <input type="password" id="claude_vision_api_key" value="${esc(c.claude_vision_api_key || '')}" placeholder="sk-ant-...">
+          <button class="reveal-btn" onclick="toggleReveal('claude_vision_api_key',this)">Show</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Vision Model Name</label>
+        <input type="text" id="claude_vision_model" value="${esc(c.claude_vision_model || 'claude-sonnet-4-6')}">
+      </div>
+    </div>
+  </div>`;
+
+  // Embedding Model
+  html += `<div class="section">
+    <div class="section-title">Embedding Model</div>
+    <div class="field">
+      <label class="field-label">Provider</label>
+      <select id="embed_mode" onchange="updateVisibility()">
+        <option value="ollama" ${c.embed_mode==='ollama'?'selected':''}>Ollama</option>
+        <option value="openai" ${c.embed_mode==='openai'?'selected':''}>OpenAI API</option>
+        <option value="voyage" ${c.embed_mode==='voyage'?'selected':''}>Voyage AI</option>
+      </select>
+    </div>
+    <div id="embed_cloud_notice" class="cloud-notice" style="display:none">
+      Cloud backends send description text to third-party API servers.
+    </div>
+    <div id="embed_ollama_fields">
+      <div class="field">
+        <label class="field-label">Ollama Endpoint</label>
+        <input type="text" id="ollama_embed_endpoint" value="${esc(c.ollama_embed_endpoint || 'http://localhost:11434')}">
+      </div>
+      <div class="field">
+        <label class="field-label">Embedding Model Name</label>
+        <input type="text" id="ollama_embed_model" value="${esc(c.ollama_embed_model || 'nomic-embed-text')}">
+      </div>
+    </div>
+    <div id="embed_openai_fields" style="display:none">
+      <div class="field">
+        <label class="field-label">OpenAI API Key</label>
+        <div class="field-row">
+          <input type="password" id="openai_embed_api_key" value="${esc(c.openai_embed_api_key || '')}" placeholder="sk-...">
+          <button class="reveal-btn" onclick="toggleReveal('openai_embed_api_key',this)">Show</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Embedding Model Name</label>
+        <input type="text" id="openai_embed_model" value="${esc(c.openai_embed_model || 'text-embedding-3-small')}">
+      </div>
+    </div>
+    <div id="embed_voyage_fields" style="display:none">
+      <div class="field">
+        <label class="field-label">Voyage AI API Key</label>
+        <div class="field-row">
+          <input type="password" id="voyage_embed_api_key" value="${esc(c.voyage_embed_api_key || '')}" placeholder="pa-...">
+          <button class="reveal-btn" onclick="toggleReveal('voyage_embed_api_key',this)">Show</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Embedding Model Name</label>
+        <input type="text" id="voyage_embed_model" value="${esc(c.voyage_embed_model || 'voyage-3.5')}">
+      </div>
+    </div>
+  </div>`;
+
+  // Patrol Folders
+  const folders = Array.isArray(c.patrol_folders) ? c.patrol_folders : [];
+  html += `<div class="section">
+    <div class="section-title">Auto Patrol</div>
+    <div class="field">
+      <div class="toggle-wrap" onclick="toggleCheck('patrol_enabled')">
+        <div class="toggle">
+          <input type="checkbox" id="patrol_enabled" ${c.patrol_enabled ? 'checked' : ''}>
+          <span class="slider"></span>
+        </div>
+        <span>Enable auto patrol</span>
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">Scan Interval (minutes)</label>
+      <input type="number" id="patrol_interval_minutes" value="${c.patrol_interval_minutes || 5}" min="1" max="1440">
+    </div>
+    <div class="field">
+      <label class="field-label">Batch Size (photos per batch)</label>
+      <input type="number" id="patrol_batch_size" value="${c.patrol_batch_size || 10}" min="1" max="100">
+    </div>
+    <div class="field">
+      <label class="field-label">Watched Folders</label>
+      <div id="folder_list" class="folder-list">
+        ${folders.map((f, i) => folderRow(f, i)).join('')}
+      </div>
+      <button class="add-btn" onclick="addFolder()">+ Add Folder</button>
+    </div>
+    <div id="patrol_status_area"></div>
+  </div>`;
+
+  // Save
+  html += `<div class="btn-row">
+    <button class="save-btn" id="saveBtn" onclick="saveSettings()">Save Settings</button>
+  </div>
+  <div id="statusMsg" class="status-msg"></div>`;
+
+  contentEl.innerHTML = html;
+  updateVisibility();
+}
+
+function folderRow(folder, index) {
+  const path = typeof folder === 'string' ? folder : (folder.path || '');
+  const recursive = typeof folder === 'string' ? true : (folder.recursive !== false);
+  return `<div class="folder-item" data-index="${index}">
+    <input type="text" class="folder-path" value="${esc(path)}" placeholder="/path/to/photos">
+    <label class="toggle-wrap" style="font-size:0.75rem;color:#888" title="Recursive">
+      <div class="toggle">
+        <input type="checkbox" class="folder-recursive" ${recursive ? 'checked' : ''}>
+        <span class="slider"></span>
+      </div>
+      Recursive
+    </label>
+    <button class="remove-btn" onclick="removeFolder(${index})">Remove</button>
+  </div>`;
+}
+
+function addFolder() {
+  const list = document.getElementById('folder_list');
+  const idx = list.children.length;
+  const div = document.createElement('div');
+  div.innerHTML = folderRow({path:'', recursive:true}, idx);
+  list.appendChild(div.firstElementChild);
+}
+
+function removeFolder(index) {
+  const items = document.querySelectorAll('#folder_list .folder-item');
+  if (items[index]) items[index].remove();
+}
+
+function collectFolders() {
+  const items = document.querySelectorAll('#folder_list .folder-item');
+  const folders = [];
+  items.forEach(item => {
+    const path = item.querySelector('.folder-path').value.trim();
+    if (path) {
+      folders.push({
+        path: path,
+        recursive: item.querySelector('.folder-recursive').checked
+      });
+    }
+  });
+  return folders;
+}
+
+function updateVisibility() {
+  const vm = document.getElementById('vision_mode').value;
+  document.getElementById('vision_ollama_fields').style.display = vm === 'ollama' ? '' : 'none';
+  document.getElementById('vision_openai_fields').style.display = vm === 'openai' ? '' : 'none';
+  document.getElementById('vision_claude_fields').style.display = vm === 'claude' ? '' : 'none';
+  document.getElementById('vision_cloud_notice').style.display = (vm !== 'ollama') ? '' : 'none';
+
+  const em = document.getElementById('embed_mode').value;
+  document.getElementById('embed_ollama_fields').style.display = em === 'ollama' ? '' : 'none';
+  document.getElementById('embed_openai_fields').style.display = em === 'openai' ? '' : 'none';
+  document.getElementById('embed_voyage_fields').style.display = em === 'voyage' ? '' : 'none';
+  document.getElementById('embed_cloud_notice').style.display = (em !== 'ollama') ? '' : 'none';
+}
+
+function toggleReveal(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = 'Show';
+  }
+}
+
+function toggleCheck(id) {
+  const cb = document.getElementById(id);
+  cb.checked = !cb.checked;
+}
+
+function val(id) {
+  const el = document.getElementById(id);
+  if (!el) return undefined;
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'number' || el.type === 'range') return parseInt(el.value, 10);
+  return el.value;
+}
+
+async function saveSettings() {
+  const btn = document.getElementById('saveBtn');
+  const msg = document.getElementById('statusMsg');
+  btn.disabled = true;
+  msg.className = 'status-msg';
+  msg.textContent = 'Saving...';
+
+  // Only send API key fields if they are not masked (i.e., user typed a new value)
+  const apiKeyFields = ['openai_vision_api_key','claude_vision_api_key','openai_embed_api_key','voyage_embed_api_key'];
+
+  const payload = {
+    index_folder: val('index_folder'),
+    vision_mode: val('vision_mode'),
+    ollama_vision_endpoint: val('ollama_vision_endpoint'),
+    ollama_vision_model: val('ollama_vision_model'),
+    openai_vision_model: val('openai_vision_model'),
+    claude_vision_model: val('claude_vision_model'),
+    embed_mode: val('embed_mode'),
+    ollama_embed_endpoint: val('ollama_embed_endpoint'),
+    ollama_embed_model: val('ollama_embed_model'),
+    openai_embed_model: val('openai_embed_model'),
+    voyage_embed_model: val('voyage_embed_model'),
+    search_max_results: val('search_max_results'),
+    search_relevance: val('search_relevance'),
+    thumbnail_store_size: val('thumbnail_store_size'),
+    strip_gps_for_cloud: val('strip_gps_for_cloud'),
+    patrol_enabled: val('patrol_enabled'),
+    patrol_interval_minutes: val('patrol_interval_minutes'),
+    patrol_batch_size: val('patrol_batch_size'),
+    patrol_folders: collectFolders(),
+  };
+
+  // Include API keys only if they don't look masked
+  for (const k of apiKeyFields) {
+    const v = val(k);
+    if (v && !v.startsWith('****')) {
+      payload[k] = v;
+    }
+  }
+
+  try {
+    const resp = await fetch('/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      msg.className = 'status-msg ok';
+      msg.textContent = 'Settings saved successfully.';
+      // Reload to reflect any server-side changes
+      setTimeout(() => { loadSettings(); }, 500);
+    } else {
+      msg.className = 'status-msg error';
+      msg.textContent = data.message || 'Failed to save.';
+    }
+  } catch (err) {
+    msg.className = 'status-msg error';
+    msg.textContent = 'Error: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadPatrolStatus() {
+  const area = document.getElementById('patrol_status_area');
+  if (!area) return;
+  try {
+    const resp = await fetch('/patrol/status');
+    const data = await resp.json();
+    if (data.status !== 'ok') return;
+    const s = data.patrol;
+    area.innerHTML = `
+      <div class="patrol-status">
+        <span class="status-label">Patrol Status:</span>
+        <span class="status-value">${esc(s.state || 'unknown')}</span>
+        ${s.files_processed != null ? ` | <span class="status-label">Processed:</span> <span class="status-value">${s.files_processed}</span>` : ''}
+        ${s.files_remaining != null ? ` | <span class="status-label">Remaining:</span> <span class="status-value">${s.files_remaining}</span>` : ''}
+        ${s.current_file ? ` | <span class="status-label">Current:</span> <span class="status-value">${esc(s.current_file.split('/').pop())}</span>` : ''}
+        ${s.last_scan_time ? ` | <span class="status-label">Last scan:</span> <span class="status-value">${esc(s.last_scan_time)}</span>` : ''}
+      </div>
+      <div class="patrol-controls">
+        <button onclick="patrolAction('start')">Start</button>
+        <button onclick="patrolAction('pause')">Pause</button>
+        <button onclick="patrolAction('stop')">Stop</button>
+      </div>
+    `;
+  } catch (e) {
+    // Patrol endpoints may not exist yet
+  }
+}
+
+async function patrolAction(action) {
+  try {
+    await fetch('/patrol/' + action, { method: 'POST' });
+    setTimeout(loadPatrolStatus, 500);
+  } catch (e) {}
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+loadSettings();
+// Auto-refresh patrol status every 60 seconds
+setInterval(loadPatrolStatus, 60000);
+</script>
+</body>
+</html>

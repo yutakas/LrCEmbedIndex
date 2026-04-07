@@ -1,11 +1,25 @@
 import json
 import logging
 import os
+import threading
 from pathlib import Path
+
+from keystore import encrypt_value, decrypt_value
 
 logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "lrcembedindex_config.json"
+
+# Thread-safe access to config dict
+_config_lock = threading.RLock()
+
+# Keys that contain API secrets and must be encrypted on disk
+API_KEY_FIELDS = {
+    "openai_vision_api_key",
+    "openai_embed_api_key",
+    "claude_vision_api_key",
+    "voyage_embed_api_key",
+}
 
 config = {
     "index_folder": "",
@@ -37,9 +51,15 @@ config = {
 
     # Privacy settings
     "strip_gps_for_cloud": True,  # strip GPS from EXIF before sending to cloud APIs
+
+    # Patrol settings
+    "patrol_enabled": False,
+    "patrol_folders": [],       # list of {"path": str, "recursive": bool}
+    "patrol_interval_minutes": 5,
+    "patrol_batch_size": 10,    # photos to process per batch before checking for interrupts
 }
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 def get_vision_model_label():
@@ -65,34 +85,58 @@ def get_config_path():
 
 
 def save_config():
-    path = get_config_path()
-    if path:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        safe = {k: v for k, v in config.items() if "api_key" not in k}
-        with open(path, "w") as f:
-            json.dump(safe, f, indent=2)
-        logger.info(f"Config saved to {path}")
+    """Save config to disk. API key fields are encrypted."""
+    with _config_lock:
+        path = get_config_path()
+        if path:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            disk_config = {}
+            for k, v in config.items():
+                if k in API_KEY_FIELDS:
+                    disk_config[k] = encrypt_value(v) if v else ""
+                else:
+                    disk_config[k] = v
+            with open(path, "w") as f:
+                json.dump(disk_config, f, indent=2)
+            logger.info(f"Config saved to {path}")
 
 
 def load_config():
-    home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
-    if os.path.exists(home_config):
-        with open(home_config, "r") as f:
-            last = json.load(f)
-        if last.get("index_folder"):
-            config.update(last)
-            cfg_path = get_config_path()
-            if cfg_path and os.path.exists(cfg_path):
-                with open(cfg_path, "r") as f:
-                    saved = json.load(f)
-                config.update(saved)
-            logger.info(f"Loaded config from {home_config}")
-            return True
-    return False
+    """Load config from disk. Encrypted API key fields are decrypted."""
+    with _config_lock:
+        home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
+        if os.path.exists(home_config):
+            with open(home_config, "r") as f:
+                last = json.load(f)
+            if last.get("index_folder"):
+                # Decrypt any encrypted values from home config
+                for k in API_KEY_FIELDS:
+                    if k in last:
+                        last[k] = decrypt_value(last[k])
+                config.update(last)
+                cfg_path = get_config_path()
+                if cfg_path and os.path.exists(cfg_path):
+                    with open(cfg_path, "r") as f:
+                        saved = json.load(f)
+                    # Decrypt any encrypted values from saved config
+                    for k in API_KEY_FIELDS:
+                        if k in saved:
+                            saved[k] = decrypt_value(saved[k])
+                    config.update(saved)
+                logger.info(f"Loaded config from {home_config}")
+                return True
+        return False
 
 
 def save_last_config_pointer():
-    home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
-    safe = {k: v for k, v in config.items() if "api_key" not in k}
-    with open(home_config, "w") as f:
-        json.dump(safe, f, indent=2)
+    """Save a pointer config to home directory. API keys are encrypted."""
+    with _config_lock:
+        home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
+        disk_config = {}
+        for k, v in config.items():
+            if k in API_KEY_FIELDS:
+                disk_config[k] = encrypt_value(v) if v else ""
+            else:
+                disk_config[k] = v
+        with open(home_config, "w") as f:
+            json.dump(disk_config, f, indent=2)
