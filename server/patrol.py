@@ -144,7 +144,6 @@ class PatrolWorker:
         self._state = "scanning"
         self._files_processed = 0
         self._errors = 0
-        batch_size = config.get("patrol_batch_size", 10)
 
         # Discover all photos across all watched folders
         all_photos = []

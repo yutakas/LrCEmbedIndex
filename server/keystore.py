@@ -5,7 +5,6 @@ Encrypted values are prefixed with 'ENC:' so they are distinguishable
 from plaintext in config files.
 """
 
-import base64
 import logging
 import os
 import stat
