@@ -558,6 +558,8 @@ function esc(s) {
 }
 
 loadSettings();
+// Auto-refresh patrol status every 60 seconds
+setInterval(loadPatrolStatus, 60000);
 </script>
 </body>
 </html>
