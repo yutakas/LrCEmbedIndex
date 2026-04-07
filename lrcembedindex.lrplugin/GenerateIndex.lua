@@ -64,12 +64,17 @@ local function generateIndex()
                 local exifData = utils.collectExifData( photo )
                 local exifEncoded = utils.encodeExifHeader( exifData )
 
+                local contentHash = utils.computeContentHash( imagePath )
+
                 local headers = {
                     { field = 'Content-Type', value = 'image/jpeg' },
                     { field = 'Content-Length', value = string.len( thumbnailPixels ) },
                     { field = 'X-Image-Path', value = imagePath },
                     { field = 'X-Exif-Data', value = exifEncoded },
                 }
+                if contentHash then
+                    headers[#headers + 1] = { field = 'X-Content-Hash', value = contentHash }
+                end
 
                 local response, hdrs = LrHttp.post(
                     serverUrl .. "/index",

@@ -150,6 +150,14 @@ def get_metadata():
             if "embedding" in e_data:
                 e_data["embedding"] = f"[{len(e_data['embedding'])} dimensions]"
 
+    # Compute content hash for display
+    try:
+        content_hash = compute_content_hash(image_path)
+    except (FileNotFoundError, PermissionError):
+        content_hash = None
+
+    safe_meta["content_hash"] = content_hash
+
     return jsonify({"status": "ok", "metadata": safe_meta,
                     "has_thumbnail": has_thumbnail(image_path)})
 
@@ -366,15 +374,17 @@ def index_photo():
                 save_thumbnail(image_path, small_thumb)
 
             # Always upsert to ChromaDB — we don't know which model pair
-            # produced the current entry, so keep it in sync
+            # produced the current entry, so keep it in sync.
+            # Use client-provided hash when original file is not accessible
+            # (e.g. remote Docker server receiving from Lightroom plugin).
             try:
                 doc_id = compute_content_hash(image_path)
-            except FileNotFoundError:
-                return jsonify({"status": "error",
-                                "message": f"Original file not accessible: {image_path}"}), 400
-            except PermissionError:
-                return jsonify({"status": "error",
-                                "message": f"Permission denied reading: {image_path}"}), 403
+            except (FileNotFoundError, PermissionError):
+                doc_id = request.headers.get("X-Content-Hash", "")
+                if not doc_id:
+                    return jsonify({"status": "error",
+                                    "message": "Original file not accessible and "
+                                    "no X-Content-Hash header provided"}), 400
             upsert_photo(doc_id, embedding, description, image_path)
 
             elapsed = time.time() - t_start
