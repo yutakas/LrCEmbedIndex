@@ -8,6 +8,7 @@
 #
 # Environment variables:
 #   INDEX_FOLDER  Host path for index/metadata storage (default: ./docker/data)
+#   PHOTO_FOLDER  Host path for photo folder to patrol (default: ./docker/photos)
 #
 set -euo pipefail
 
