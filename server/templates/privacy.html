@@ -81,7 +81,7 @@
   </ul>
 
   <h2>API key handling</h2>
-  <p>API keys are stored in Lightroom plugin preferences and kept in-memory on the server. They are <strong>never written to config files on disk</strong> and are redacted from all API responses.</p>
+  <p>API keys are encrypted at rest using Fernet symmetric encryption and stored in <code>lrcembedindex_config.json</code> with an <code>ENC:</code> prefix. The encryption key is stored in <code>~/.lrcembedindex_key</code> with restrictive file permissions (0600). API keys are redacted from all API responses except the <code>/settings/sync</code> endpoint (see Network deployment below).</p>
 
   <h2>Data deletion</h2>
   <p>You can delete all indexed data for a specific photo via:</p>
@@ -93,7 +93,16 @@
   <p>To delete all indexed data, remove the index folder.</p>
 
   <h2>Local server</h2>
-  <p>The server binds to <code>127.0.0.1</code> (localhost only) and is not accessible from the network. No authentication is required because only local processes can connect. Cross-origin requests are restricted to localhost origins.</p>
+  <p>By default, the server binds to <code>127.0.0.1</code> (localhost only) and is not accessible from the network. No authentication is required because only local processes can connect. Cross-origin requests are restricted to localhost origins.</p>
+
+  <h2>Network deployment (Docker)</h2>
+  <p>When running in Docker with <code>--host 0.0.0.0</code>, the server is accessible to all machines on the network. In this configuration:</p>
+  <ul>
+    <li>The <code>/settings/sync</code> endpoint returns <strong>unmasked API keys</strong> so the Lightroom plugin can load settings from the server.</li>
+    <li>All indexed data (metadata, thumbnails, descriptions) is accessible via the web UI.</li>
+    <li>There is no authentication mechanism &mdash; access control relies on network-level restrictions.</li>
+  </ul>
+  <p>To restrict access, bind to a specific interface in <code>docker-compose.yml</code> or use firewall rules.</p>
 
   <h2>Contact</h2>
   <p>For privacy questions, open an issue at <a href="https://github.com/yutakas/LrCEmbedIndex/issues" target="_blank">github.com/yutakas/LrCEmbedIndex/issues</a>.</p>
