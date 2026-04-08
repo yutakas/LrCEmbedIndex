@@ -1,3 +1,4 @@
+import argparse
 import logging
 
 from flask import Flask
@@ -43,6 +44,13 @@ def startup():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="LrCEmbedIndex server")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind address (default: 127.0.0.1, use 0.0.0.0 for Docker)")
+    parser.add_argument("--port", type=int, default=8600,
+                        help="Port number (default: 8600)")
+    args = parser.parse_args()
+
     startup()
     app = create_app()
-    app.run(host="127.0.0.1", port=8600, debug=False)
+    app.run(host=args.host, port=args.port, debug=False)

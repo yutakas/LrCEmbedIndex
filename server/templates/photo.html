@@ -192,7 +192,7 @@ async function loadPhoto() {
     html += `<button class="btn-danger" onclick="deleteFromIndex()">Delete from index</button>`;
     html += `<a href="/thumbnail?path=${encodeURIComponent(imagePath)}" target="_blank">View thumbnail</a>`;
     if (meta.content_hash) {
-      html += `<span class="embed-tag">Hash: ${escapeHtml(meta.content_hash.substring(0, 20))}...</span>`;
+      html += `<span class="embed-tag">Hash: ${escapeHtml(meta.content_hash)}</span>`;
     }
     html += '</div></div></div>';
 

@@ -63,6 +63,24 @@ function LrCEmbedUtils.requestThumbnail( photo, maxSize )
 end
 
 
+function LrCEmbedUtils.computeContentHash( filePath )
+    -- Compute SHA-256 of file content using shasum (macOS/Linux)
+    -- Returns "sha256:<hex>" or nil on failure
+    local quoted = filePath:gsub( "'", "'\\''" )
+    local handle = io.popen( "shasum -a 256 '" .. quoted .. "' 2>/dev/null" )
+    if not handle then return nil end
+    local result = handle:read( "*a" )
+    handle:close()
+    if result then
+        local hex = result:match( "^(%x+)" )
+        if hex and #hex == 64 then
+            return "sha256:" .. hex
+        end
+    end
+    return nil
+end
+
+
 function LrCEmbedUtils.percentEncode( str )
     return string.gsub( str, "([^%w%-%.%_%~])", function( c )
         return string.format( "%%%02X", string.byte( c ) )

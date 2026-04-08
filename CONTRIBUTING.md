@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ## Making Changes
 
 - Keep changes focused — one feature or fix per pull request
-- Follow existing code style (no linter is enforced yet)
+- Follow existing code style — Python code is linted with [ruff](https://docs.astral.sh/ruff/) via CI on every push and PR
 - Test your changes with the Lightroom plugin and Python server before submitting
 
 ## Submitting a Pull Request

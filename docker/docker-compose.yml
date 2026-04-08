@@ -1,0 +1,20 @@
+services:
+  lrcembedindex:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: lrcembedindex
+    restart: unless-stopped
+    ports:
+      - "8600:8600"
+    volumes:
+      # Mount host index/metadata folder into the container.
+      # Change the left side to your actual host path.
+      - ${INDEX_FOLDER:-./data}:/data
+      # Mount host photo folder(s) for auto patrol
+      - ${PHOTO_FOLDER:-./photos}:/photos
+      # Persist the encryption key across container rebuilds
+      - lrcembedindex-key:/root
+
+volumes:
+  lrcembedindex-key:

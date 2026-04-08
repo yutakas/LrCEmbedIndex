@@ -13,8 +13,6 @@ local function sectionsForTopOfDialog( f, propertyTable )
 
     -- Defaults
     if not prefs.serverUrl then prefs.serverUrl = "http://localhost:8600" end
-    if not prefs.indexFolder then prefs.indexFolder = "" end
-
     -- Vision settings
     if not prefs.visionMode then prefs.visionMode = "ollama" end
     if not prefs.ollamaVisionEndpoint then prefs.ollamaVisionEndpoint = "http://localhost:11434" end
@@ -39,7 +37,6 @@ local function sectionsForTopOfDialog( f, propertyTable )
 
     -- Bind to property table
     propertyTable.serverUrl = prefs.serverUrl
-    propertyTable.indexFolder = prefs.indexFolder
     propertyTable.searchMaxResults = prefs.searchMaxResults
     propertyTable.searchRelevance = prefs.searchRelevance
 
@@ -81,7 +78,7 @@ local function sectionsForTopOfDialog( f, propertyTable )
     return {
         {
             title = "LrC Embed Index — General",
-            synopsis = "Server and index folder settings",
+            synopsis = "Server and search settings",
 
             f:row {
                 f:static_text {
@@ -92,32 +89,6 @@ local function sectionsForTopOfDialog( f, propertyTable )
                 f:edit_field {
                     value = LrView.bind { key = 'serverUrl', object = propertyTable },
                     width_in_chars = 40,
-                },
-            },
-
-            f:row {
-                f:static_text {
-                    title = "Index & Metadata Folder:",
-                    alignment = 'right',
-                    width = LrView.share 'label_width',
-                },
-                f:edit_field {
-                    value = LrView.bind { key = 'indexFolder', object = propertyTable },
-                    width_in_chars = 30,
-                },
-                f:push_button {
-                    title = "Browse...",
-                    action = function( button )
-                        local path = LrDialogs.runOpenPanel {
-                            title = "Select Index Folder",
-                            canChooseFiles = false,
-                            canChooseDirectories = true,
-                            allowsMultipleSelection = false,
-                        }
-                        if path then
-                            propertyTable.indexFolder = path[1]
-                        end
-                    end,
                 },
             },
 
@@ -430,7 +401,6 @@ local function sectionsForTopOfDialog( f, propertyTable )
                         local c = data.config
 
                         -- Update property table with server values
-                        if c.index_folder then propertyTable.indexFolder = c.index_folder end
                         if c.search_max_results then propertyTable.searchMaxResults = c.search_max_results end
                         if c.search_relevance then propertyTable.searchRelevance = c.search_relevance end
 
@@ -467,7 +437,6 @@ local function sectionsForTopOfDialog( f, propertyTable )
                     action = function( button )
                         -- Persist to prefs
                         prefs.serverUrl = propertyTable.serverUrl
-                        prefs.indexFolder = propertyTable.indexFolder
                         prefs.searchMaxResults = propertyTable.searchMaxResults
                         prefs.searchRelevance = propertyTable.searchRelevance
 
@@ -489,8 +458,6 @@ local function sectionsForTopOfDialog( f, propertyTable )
 
                         -- Send all settings to the Python server
                         local payload = json.encode({
-                            index_folder = propertyTable.indexFolder,
-
                             vision_mode = propertyTable.visionMode,
                             ollama_vision_endpoint = propertyTable.ollamaVisionEndpoint,
                             ollama_vision_model = propertyTable.ollamaVisionModel,

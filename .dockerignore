@@ -1,0 +1,8 @@
+.git
+.github
+*.md
+LICENSE
+lrcembedindex.lrplugin
+docker/data
+server/__pycache__
+server/*.pyc

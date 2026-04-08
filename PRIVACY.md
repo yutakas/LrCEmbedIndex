@@ -38,7 +38,9 @@ Review each provider's data handling policies:
 
 ## API key handling
 
-API keys are stored in Lightroom plugin preferences and kept in-memory on the server. They are **never written to config files on disk** and are redacted from all API responses.
+API keys are encrypted at rest using Fernet symmetric encryption and stored in `lrcembedindex_config.json` with an `ENC:` prefix. The encryption key is stored in `~/.lrcembedindex_key` with restrictive file permissions (0600). API keys are redacted from all API responses except the `/settings/sync` endpoint (see Network deployment below).
+
+When using the Lightroom plugin, API keys are also stored in Lightroom plugin preferences.
 
 ## Data deletion
 
@@ -52,7 +54,24 @@ To delete all indexed data, remove the index folder.
 
 ## Local server
 
-The server binds to `127.0.0.1` (localhost only) and is not accessible from the network. No authentication is required because only local processes can connect. Cross-origin requests are restricted to localhost origins.
+By default, the server binds to `127.0.0.1` (localhost only) and is not accessible from the network. No authentication is required because only local processes can connect. Cross-origin requests are restricted to localhost origins.
+
+## Network deployment (Docker)
+
+When running in Docker with `--host 0.0.0.0`, the server is accessible to all machines on the network. In this configuration:
+
+- The `/settings/sync` endpoint returns **unmasked API keys** so the Lightroom plugin can load settings from the server. Anyone on the network can access this endpoint.
+- All indexed data (metadata, thumbnails, descriptions) is accessible via the web UI.
+- There is no authentication mechanism — access control relies on network-level restrictions.
+
+**To restrict access**, bind to a specific interface in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "192.168.1.100:8600:8600"   # only accessible via this IP
+```
+
+Or use firewall rules to limit which machines can reach port 8600.
 
 ## Contact
 

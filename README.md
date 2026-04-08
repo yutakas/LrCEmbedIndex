@@ -38,27 +38,41 @@ LrCEmbedIndex/
 │   ├── SearchPhoto.lua          # Menu: semantic search with collection results
 │   ├── DescribePhoto.lua        # Menu: describe a single selected photo
 │   ├── ShowStats.lua            # Menu: show ChromaDB & metadata statistics
+│   ├── SearchInBrowser.lua      # Menu: open search in browser
 │   ├── PluginInfoProvider.lua   # Settings UI
-│   └── dkjson.lua               # JSON library
+│   ├── LrCEmbedUtils.lua       # Utility functions (thumbnails, EXIF, content hash)
+│   └── dkjson.lua               # JSON library (MIT)
 ├── server/
 │   ├── server.py                # Flask app entry point
 │   ├── routes.py                # API route handlers
-│   ├── config.py                # Configuration management
+│   ├── config.py                # Configuration management (encrypted API keys)
+│   ├── keystore.py              # Fernet encryption for API key storage
 │   ├── vision.py                # Vision model integration (Ollama/OpenAI/Claude)
 │   ├── embedding.py             # Embedding model integration (Ollama/OpenAI/Voyage AI)
 │   ├── vectorstore.py           # ChromaDB vector store with relevance filtering
 │   ├── metadata.py              # Sharded JSON metadata storage
 │   ├── helpers.py               # EXIF-to-text conversion, utilities
+│   ├── photo_utils.py           # Shared photo discovery, thumbnails, EXIF extraction
+│   ├── patrol.py                # Background auto-indexing worker
+│   ├── mcp_server.py            # MCP server for Claude and MCP clients
 │   ├── ollama_lock.py           # Threading lock for Ollama call serialization
+│   ├── scan_and_index.py        # CLI batch indexing script
 │   ├── requirements.txt         # Python dependencies
-│   └── requirements-lock.txt    # Pinned dependency versions
-├── .github/workflows/lint.yml  # CI: Python linting
+│   ├── requirements-lock.txt    # Pinned dependency versions
+│   └── templates/               # Web UI templates (search, photo, settings, stats, etc.)
+├── docker/
+│   ├── Dockerfile               # Python 3.11-slim with libraw for RAW support
+│   ├── docker-compose.yml       # Service definition with volume mounts
+│   ├── rebuild.sh               # Stop, rebuild, and deploy container
+│   └── README.md                # Docker deployment documentation
+├── .github/workflows/lint.yml   # CI: Python linting with ruff
 ├── README.md
 ├── LICENSE
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
-└── SECURITY.md
+├── SECURITY.md
+└── PRIVACY.md
 ```
 
 ## Prerequisites
@@ -99,23 +113,20 @@ The server runs on port 8600 by default.
 
    **General Settings:**
    - **Python Server URL** (default: `http://localhost:8600`)
-   - **Index & Metadata Folder** — where metadata and ChromaDB data are stored
    - **Search Max Results** — max candidates from vector DB per search (default: 10)
    - **Relevance Threshold** — slider (0–100) controlling how strict the relevance filter is
 
-   **Vision Model:**
-   - Choose between **Ollama**, **OpenAI API**, or **Claude API**
-   - Ollama: endpoint URL + model name (default: `qwen3.5`)
-   - OpenAI: API key + model name (default: `gpt-4o`)
-   - Claude: API key + model name (default: `claude-sonnet-4-6`)
-
-   **Embedding Model:**
-   - Choose between **Ollama**, **OpenAI API**, or **Voyage AI**
-   - Ollama: endpoint URL + model name (default: `nomic-embed-text`)
-   - OpenAI: API key + model name (default: `text-embedding-3-small`)
-   - Voyage AI: API key + model name (default: `voyage-3.5`)
+   **Vision & Embedding Models** — choose backends and configure API keys. You can also use "Load from Server" to pull settings from the server's web Settings UI.
 
 5. Click **Save & Apply Settings**
+
+### Settings Web UI
+
+Open `http://localhost:8600/settings-ui` in a browser to configure all settings including:
+- Index folder path
+- Vision and embedding model backends and API keys
+- Auto patrol folders and intervals
+- API keys are encrypted at rest using Fernet symmetric encryption
 
 ## Usage
 
@@ -167,6 +178,44 @@ The server runs on port 8600 by default.
 | `/describe` | POST | Describe a single photo (vision only, uses cache). Body: JPEG data. Headers: `X-Image-Path`, `X-Exif-Data` |
 | `/stats` | GET | Get metadata, ChromaDB, and config statistics |
 | `/settings` | POST | Update config. Body: JSON with any config keys |
+| `/settings-ui` | GET | Settings web UI |
+| `/settings/sync` | GET | Full config including API keys (for plugin sync) |
+| `/patrol/status` | GET | Auto patrol worker status |
+| `/patrol/start` | POST | Start patrol worker |
+| `/patrol/stop` | POST | Stop patrol worker |
+| `/patrol/pause` | POST | Pause patrol worker |
+
+## Standalone Mode (Auto Patrol)
+
+The server can run independently without the Lightroom plugin, automatically scanning and indexing photos from configured folders:
+
+1. Configure patrol folders via the Settings Web UI (`/settings-ui`)
+2. Set the scan interval (default: 60 minutes)
+3. Click **Start** to begin auto-indexing
+
+The patrol worker runs in a background thread, scanning folders for new or changed photos. It uses the same vision and embedding pipeline as the Lightroom plugin. When Lightroom sends an indexing request, the patrol worker automatically pauses and resumes after the request completes.
+
+## Docker Deployment
+
+Run the server in a Docker container for remote/NAS deployment:
+
+```bash
+INDEX_FOLDER=/path/to/index PHOTO_FOLDER=/path/to/photos ./docker/rebuild.sh
+```
+
+The server is accessible at `http://<hostname>:8600`. Set the **Index Folder** to `/data` and patrol folders to `/photos` in the Settings UI (these are container-side mount points).
+
+See [docker/README.md](docker/README.md) for full configuration, remote deployment via Docker contexts, and security considerations.
+
+## MCP Server
+
+The project includes an MCP (Model Context Protocol) server for integration with Claude and other MCP clients:
+
+```bash
+python server/mcp_server.py
+```
+
+Available MCP tools: `search_photos`, `get_photo_info`, `get_stats`.
 
 ## Data Storage
 
@@ -246,7 +295,7 @@ All model names are configurable in the plugin settings UI. Here are reference l
   - [Anthropic Usage Policy](https://www.anthropic.com/policies/usage-policy)
   - [Voyage AI Terms of Service](https://www.voyageai.com/terms-of-service)
 - **Local storage only:** All metadata, embeddings, and configuration are stored locally on your machine. No telemetry or analytics are collected.
-- **API keys** are stored in Lightroom plugin preferences and kept in-memory on the server. They are never written to config files on disk.
+- **API keys** are encrypted at rest using Fernet symmetric encryption. See [PRIVACY.md](PRIVACY.md) for details.
 
 Users are responsible for complying with the terms of service of their chosen API providers.
 
