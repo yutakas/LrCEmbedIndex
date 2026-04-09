@@ -184,6 +184,13 @@ def search_photos(embedding, n_results=10, relevance=None):
         query_embeddings=[embedding],
         n_results=n_results,
     )
+    if results and results["ids"] and results["ids"][0] and logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"ChromaDB raw results ({len(results['ids'][0])} hits):")
+        for i, doc_id in enumerate(results["ids"][0]):
+            dist = results["distances"][0][i] if results["distances"] else 0
+            path = results["metadatas"][0][i].get("path", "") if results["metadatas"] else ""
+            logger.debug(f"  raw#{i+1} dist={dist:.4f} id={doc_id[:12]}.. "
+                         f"file={os.path.basename(path)}")
     matches = []
     if results and results["ids"] and results["ids"][0]:
         for i, doc_id in enumerate(results["ids"][0]):

@@ -32,6 +32,9 @@ def startup():
         if config["index_folder"]:
             init_chromadb()
             logger.info(f"Startup: {count_metadata_files()} metadata files found")
+    if config.get("debug_logging"):
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.info("Debug logging enabled")
     logger.info(f"Vision: {get_vision_model_label()}, Embed: {get_embed_model_label()}")
 
     # Initialize patrol worker
@@ -49,7 +52,12 @@ if __name__ == "__main__":
                         help="Bind address (default: 127.0.0.1, use 0.0.0.0 for Docker)")
     parser.add_argument("--port", type=int, default=8600,
                         help="Port number (default: 8600)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable DEBUG level logging for search diagnostics")
     args = parser.parse_args()
+
+    if args.debug:
+        config["debug_logging"] = True
 
     startup()
     app = create_app()

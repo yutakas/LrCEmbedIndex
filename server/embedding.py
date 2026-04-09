@@ -10,10 +10,20 @@ logger = logging.getLogger(__name__)
 
 def get_embedding(text):
     if config["embed_mode"] == "openai":
-        return _get_embedding_openai(text)
-    if config["embed_mode"] == "voyage":
-        return _get_embedding_voyage(text)
-    return _get_embedding_ollama(text)
+        vec = _get_embedding_openai(text)
+    elif config["embed_mode"] == "voyage":
+        vec = _get_embedding_voyage(text)
+    else:
+        vec = _get_embedding_ollama(text)
+
+    if vec and logger.isEnabledFor(logging.DEBUG):
+        norm = sum(v * v for v in vec) ** 0.5
+        model = config.get(f"{config['embed_mode']}_embed_model",
+                           config.get("ollama_embed_model", "?"))
+        logger.debug(f"Embedding: mode={config['embed_mode']}, model={model}, "
+                     f"dims={len(vec)}, norm={norm:.4f}, "
+                     f"first5={[round(v, 4) for v in vec[:5]]}")
+    return vec
 
 
 def _get_embedding_ollama(text):

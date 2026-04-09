@@ -52,6 +52,9 @@ config = {
     # Privacy settings
     "strip_gps_for_cloud": True,  # strip GPS from EXIF before sending to cloud APIs
 
+    # Debug settings
+    "debug_logging": False,
+
     # Patrol settings
     "patrol_enabled": False,
     "patrol_folders": [],       # list of {"path": str, "recursive": bool}

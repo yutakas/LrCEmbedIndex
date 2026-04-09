@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logs - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 1.5rem; color: #fff; }
+  h1 span { color: #888; font-weight: 300; }
+
+  .controls {
+    display: flex; gap: 0.4rem; align-items: center;
+    margin-bottom: 1rem; flex-wrap: wrap;
+  }
+  .controls button {
+    padding: 0.35rem 0.7rem; font-size: 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #aaa; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  }
+  .controls button:hover { border-color: #6b8afd; color: #6b8afd; }
+  .controls button.active { color: #6b8afd; border-color: #6b8afd; }
+  .controls .spacer { flex: 1; }
+  .controls .debug-status {
+    font-size: 0.75rem; color: #888; margin-right: 0.5rem;
+  }
+  .controls .debug-status.on { color: #4ade80; }
+
+  .log-container {
+    background: #111; border: 1px solid #333; border-radius: 8px;
+    font-family: 'SF Mono', 'Menlo', 'Courier New', monospace;
+    font-size: 0.78rem;
+    padding: 0.75rem; overflow-y: auto; max-height: 70vh;
+    line-height: 1.6; color: #ccc;
+  }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-line:hover { background: #1a1a1a; }
+  .log-time { color: #555; }
+  .log-name { color: #666; }
+  .log-level-DEBUG { color: #888; }
+  .log-level-INFO { color: #4ade80; }
+  .log-level-WARNING { color: #fbbf24; }
+  .log-level-ERROR { color: #f87171; }
+  .log-level-CRITICAL { color: #f87171; font-weight: bold; }
+  .log-msg { color: #ddd; }
+
+  .empty-state {
+    text-align: center; padding: 3rem; color: #555;
+    font-size: 0.9rem;
+  }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LrCEmbedIndex <span>Logs</span></h1>
+  <div class="controls">
+    <button onclick="setFilter('all')" class="filter-btn active" data-filter="all">All</button>
+    <button onclick="setFilter('DEBUG')" class="filter-btn" data-filter="DEBUG">Debug</button>
+    <button onclick="setFilter('INFO')" class="filter-btn" data-filter="INFO">Info</button>
+    <button onclick="setFilter('WARNING')" class="filter-btn" data-filter="WARNING">Warning</button>
+    <button onclick="setFilter('ERROR')" class="filter-btn" data-filter="ERROR">Error</button>
+    <span class="spacer"></span>
+    <span id="debugStatus" class="debug-status"></span>
+    <button onclick="toggleAutoScroll(this)">Auto-scroll</button>
+    <button onclick="clearLogs()">Clear</button>
+    <button onclick="loadLogs()">Refresh</button>
+  </div>
+  <div class="log-container" id="logView">
+    <div class="empty-state">Loading logs...</div>
+  </div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/">Search</a>
+      <a href="/stats-ui">Stats</a>
+      <a href="/settings-ui">Settings</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
+</div>
+<script>
+let allLogs = [];
+let currentFilter = 'all';
+let autoScroll = true;
+
+async function loadLogs() {
+  try {
+    const resp = await fetch('/logs?limit=1000');
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      allLogs = data.logs || [];
+      if (data.version) {
+        document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + data.version;
+      }
+      renderLogs();
+    }
+  } catch (err) {
+    document.getElementById('logView').innerHTML =
+      `<div class="empty-state" style="color:#f87171">Error: ${esc(err.message)}</div>`;
+  }
+  loadDebugStatus();
+}
+
+async function loadDebugStatus() {
+  try {
+    const resp = await fetch('/settings');
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      const el = document.getElementById('debugStatus');
+      if (data.config.debug_logging) {
+        el.textContent = 'Debug: ON';
+        el.className = 'debug-status on';
+      } else {
+        el.textContent = 'Debug: OFF';
+        el.className = 'debug-status';
+      }
+    }
+  } catch (e) {}
+}
+
+function renderLogs() {
+  const logView = document.getElementById('logView');
+  const filtered = currentFilter === 'all'
+    ? allLogs
+    : allLogs.filter(l => l.level === currentFilter);
+
+  if (filtered.length === 0) {
+    logView.innerHTML = '<div class="empty-state">No logs to display</div>';
+    return;
+  }
+
+  logView.innerHTML = filtered.map(log => {
+    const level = log.level || 'INFO';
+    const name = log.name || '';
+    return `<div class="log-line">`
+      + `<span class="log-time">${esc(log.time || '')}</span> `
+      + `<span class="log-level-${level}">${level.padEnd(8)}</span> `
+      + `<span class="log-name">${esc(name)}:</span> `
+      + `<span class="log-msg">${esc(log.message || '')}</span>`
+      + `</div>`;
+  }).join('');
+
+  if (autoScroll) {
+    logView.scrollTop = logView.scrollHeight;
+  }
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === filter);
+  });
+  renderLogs();
+}
+
+function toggleAutoScroll(btn) {
+  autoScroll = !autoScroll;
+  btn.classList.toggle('active', autoScroll);
+  if (autoScroll) {
+    const logView = document.getElementById('logView');
+    logView.scrollTop = logView.scrollHeight;
+  }
+}
+
+async function clearLogs() {
+  try {
+    await fetch('/logs/clear', { method: 'POST' });
+    allLogs = [];
+    renderLogs();
+  } catch (e) {}
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Initialize auto-scroll button as active
+document.querySelector('button[onclick*="toggleAutoScroll"]').classList.add('active');
+
+loadLogs();
+setInterval(loadLogs, 5000);
+</script>
+</body>
+</html>
