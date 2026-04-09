@@ -149,7 +149,10 @@ def _filter_relevant(matches, relevance=None):
 
     # 1. absolute threshold
     filtered = [m for m in matches if m["distance"] <= max_distance]
+    after_abs = len(filtered)
     if not filtered:
+        logger.debug(f"Relevance: all {len(matches)} results exceeded "
+                     f"max_distance={max_distance:.2f} (best was {matches[0]['distance']:.4f})")
         return []
 
     # 3. relative to best
@@ -157,14 +160,17 @@ def _filter_relevant(matches, relevance=None):
     if best_dist > 0:
         cutoff = best_dist * best_ratio
         filtered = [m for m in filtered if m["distance"] <= cutoff]
+    after_best = len(filtered)
 
     # 2. gap detection (distances are sorted ascending from ChromaDB)
+    gap_at = None
     if len(filtered) > 1:
         keep = 1
         for i in range(1, len(filtered)):
             prev = filtered[i - 1]["distance"]
             curr = filtered[i]["distance"]
             if prev > 0 and curr / prev > gap_ratio:
+                gap_at = i
                 break
             keep = i + 1
         filtered = filtered[:keep]
@@ -172,6 +178,12 @@ def _filter_relevant(matches, relevance=None):
     logger.info(f"Relevance filter: {len(matches)} candidates -> {len(filtered)} relevant "
                 f"(best={matches[0]['distance']:.3f}, "
                 f"worst_kept={filtered[-1]['distance']:.3f})")
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"Relevance stages: {len(matches)} raw -> "
+                     f"{after_abs} after abs_threshold({max_distance:.2f}) -> "
+                     f"{after_best} after best_ratio({best_ratio:.2f}, cutoff={best_dist * best_ratio:.4f}) -> "
+                     f"{len(filtered)} after gap_detection"
+                     f"{f' (gap at #{gap_at+1})' if gap_at else ''}")
     return filtered
 
 
@@ -185,12 +197,16 @@ def search_photos(embedding, n_results=10, relevance=None):
         n_results=n_results,
     )
     if results and results["ids"] and results["ids"][0] and logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"ChromaDB raw results ({len(results['ids'][0])} hits):")
+        logger.debug(f"ChromaDB raw results ({len(results['ids'][0])} hits, "
+                     f"n_results={n_results}, collection_size={chroma_collection.count()}):")
         for i, doc_id in enumerate(results["ids"][0]):
             dist = results["distances"][0][i] if results["distances"] else 0
             path = results["metadatas"][0][i].get("path", "") if results["metadatas"] else ""
-            logger.debug(f"  raw#{i+1} dist={dist:.4f} id={doc_id[:12]}.. "
-                         f"file={os.path.basename(path)}")
+            desc = results["documents"][0][i] if results["documents"] else ""
+            # Truncate description to first 150 chars for readability
+            desc_preview = desc[:150].replace("\n", " ") + ("..." if len(desc) > 150 else "")
+            logger.debug(f"  raw#{i+1} dist={dist:.4f} file={os.path.basename(path)} "
+                         f"id={doc_id[:12]}.. desc={desc_preview}")
     matches = []
     if results and results["ids"] and results["ids"][0]:
         for i, doc_id in enumerate(results["ids"][0]):

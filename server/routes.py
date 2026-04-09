@@ -429,6 +429,7 @@ def index_photo():
                                     "message": "Original file not accessible and "
                                     "no X-Content-Hash header provided"}), 400
             upsert_photo(doc_id, embedding, description, image_path)
+            invalidate_stats_cache()
 
             elapsed = time.time() - t_start
             skipped_parts = []
@@ -574,10 +575,34 @@ def update_settings():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+_stats_cache = None
+_stats_cache_time = 0
+_STATS_CACHE_TTL = 60  # seconds
+
+
+def invalidate_stats_cache():
+    """Call after indexing or deleting photos to force a fresh stats computation."""
+    global _stats_cache, _stats_cache_time
+    _stats_cache = None
+    _stats_cache_time = 0
+
+
 @api.route("/stats", methods=["GET"])
 def get_stats():
+    global _stats_cache, _stats_cache_time
     t_start = time.time()
     try:
+        # Return cached stats if still fresh
+        if _stats_cache and (t_start - _stats_cache_time) < _STATS_CACHE_TTL:
+            # Update config snapshot (cheap) and elapsed
+            _stats_cache["config"] = {
+                k: v for k, v in config.items() if "api_key" not in k
+            }
+            _stats_cache["elapsed"] = 0
+            _stats_cache["cached"] = True
+            logger.debug("GET /stats served from cache")
+            return jsonify(_stats_cache)
+
         # Metadata stats
         meta_count = count_metadata_files()
         meta_stats = collect_metadata_stats()
@@ -590,7 +615,7 @@ def get_stats():
 
         elapsed = time.time() - t_start
         logger.info(f"GET /stats completed in {elapsed:.1f}s")
-        return jsonify({
+        result = {
             "status": "ok",
             "metadata": {
                 "total_files": meta_count,
@@ -604,7 +629,11 @@ def get_stats():
             "config": safe_config,
             "version": VERSION,
             "elapsed": round(elapsed, 2),
-        })
+            "cached": False,
+        }
+        _stats_cache = result
+        _stats_cache_time = t_start
+        return jsonify(result)
 
     except Exception as e:
         elapsed = time.time() - t_start
@@ -728,6 +757,7 @@ def delete_metadata():
     if not deleted:
         return jsonify({"status": "error", "message": "No metadata found"}), 404
 
+    invalidate_stats_cache()
     return jsonify({"status": "ok", "message": "Photo data deleted"})
 
 

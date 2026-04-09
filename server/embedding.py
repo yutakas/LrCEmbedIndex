@@ -1,3 +1,4 @@
+import json
 import logging
 
 import requests
@@ -22,7 +23,8 @@ def get_embedding(text):
                            config.get("ollama_embed_model", "?"))
         logger.debug(f"Embedding: mode={config['embed_mode']}, model={model}, "
                      f"dims={len(vec)}, norm={norm:.4f}, "
-                     f"first5={[round(v, 4) for v in vec[:5]]}")
+                     f"text={repr(text[:200])}")
+        logger.debug(f"Embedding vector: {json.dumps([round(v, 6) for v in vec])}")
     return vec
 
 
