@@ -186,11 +186,16 @@ def collect_metadata_stats():
     oldest = None
     newest = None
 
+    thumb_count = 0
+
     for shard in os.listdir(meta_dir):
         shard_path = os.path.join(meta_dir, shard)
         if not os.path.isdir(shard_path):
             continue
         for fname in os.listdir(shard_path):
+            if fname.endswith(".jpg"):
+                thumb_count += 1
+                continue
             if not fname.endswith(".json"):
                 continue
             try:
@@ -220,14 +225,6 @@ def collect_metadata_stats():
                             oldest = e_ts
                         if newest is None or e_ts > newest:
                             newest = e_ts
-
-    thumb_count = 0
-    for shard in os.listdir(meta_dir):
-        shard_path = os.path.join(meta_dir, shard)
-        if os.path.isdir(shard_path):
-            thumb_count += len(
-                [f for f in os.listdir(shard_path) if f.endswith(".jpg")]
-            )
 
     return {
         "vision_models": vision_counts,

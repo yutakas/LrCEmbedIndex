@@ -587,57 +587,58 @@ def invalidate_stats_cache():
     _stats_cache_time = 0
 
 
+def compute_stats_cached():
+    """Return stats dict, using a 60s TTL cache.
+
+    Shared by the /stats HTTP endpoint and the MCP get_stats tool.
+    """
+    global _stats_cache, _stats_cache_time
+    now = time.time()
+
+    if _stats_cache and (now - _stats_cache_time) < _STATS_CACHE_TTL:
+        cached = dict(_stats_cache)
+        cached["config"] = {k: v for k, v in config.items() if "api_key" not in k}
+        cached["elapsed"] = 0
+        cached["cached"] = True
+        logger.debug("Stats served from cache")
+        return cached
+
+    t_start = time.time()
+
+    meta_count = count_metadata_files()
+    meta_stats = collect_metadata_stats()
+    chroma_stats = get_chromadb_stats()
+    safe_config = {k: v for k, v in config.items() if "api_key" not in k}
+
+    elapsed = time.time() - t_start
+    logger.info(f"Stats computed in {elapsed:.1f}s")
+    result = {
+        "status": "ok",
+        "metadata": {
+            "total_files": meta_count,
+            "thumbnail_files": meta_stats.get("thumbnail_count", 0),
+            "vision_models": meta_stats.get("vision_models", {}),
+            "embed_models": meta_stats.get("embed_models", {}),
+            "oldest_entry": meta_stats.get("oldest_entry"),
+            "newest_entry": meta_stats.get("newest_entry"),
+        },
+        "chromadb": chroma_stats,
+        "config": safe_config,
+        "version": VERSION,
+        "elapsed": round(elapsed, 2),
+        "cached": False,
+    }
+    _stats_cache = result
+    _stats_cache_time = t_start
+    return result
+
+
 @api.route("/stats", methods=["GET"])
 def get_stats():
-    global _stats_cache, _stats_cache_time
-    t_start = time.time()
     try:
-        # Return cached stats if still fresh
-        if _stats_cache and (t_start - _stats_cache_time) < _STATS_CACHE_TTL:
-            # Update config snapshot (cheap) and elapsed
-            _stats_cache["config"] = {
-                k: v for k, v in config.items() if "api_key" not in k
-            }
-            _stats_cache["elapsed"] = 0
-            _stats_cache["cached"] = True
-            logger.debug("GET /stats served from cache")
-            return jsonify(_stats_cache)
-
-        # Metadata stats
-        meta_count = count_metadata_files()
-        meta_stats = collect_metadata_stats()
-
-        # ChromaDB stats
-        chroma_stats = get_chromadb_stats()
-
-        # Current config (redact API keys)
-        safe_config = {k: v for k, v in config.items() if "api_key" not in k}
-
-        elapsed = time.time() - t_start
-        logger.info(f"GET /stats completed in {elapsed:.1f}s")
-        result = {
-            "status": "ok",
-            "metadata": {
-                "total_files": meta_count,
-                "thumbnail_files": meta_stats.get("thumbnail_count", 0),
-                "vision_models": meta_stats.get("vision_models", {}),
-                "embed_models": meta_stats.get("embed_models", {}),
-                "oldest_entry": meta_stats.get("oldest_entry"),
-                "newest_entry": meta_stats.get("newest_entry"),
-            },
-            "chromadb": chroma_stats,
-            "config": safe_config,
-            "version": VERSION,
-            "elapsed": round(elapsed, 2),
-            "cached": False,
-        }
-        _stats_cache = result
-        _stats_cache_time = t_start
-        return jsonify(result)
-
+        return jsonify(compute_stats_cached())
     except Exception as e:
-        elapsed = time.time() - t_start
-        logger.exception(f"GET /stats failed in {elapsed:.1f}s: {e}")
+        logger.exception(f"GET /stats failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

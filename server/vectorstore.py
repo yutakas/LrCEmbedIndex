@@ -13,6 +13,7 @@ CHROMA_BASE_DIR = "chromadb"
 chroma_client = None
 chroma_collection = None
 _current_embed_label = None
+_store_client_cache = {}  # {store_path: (client, collection)} for stats queries
 
 
 def _sanitize_dir_name(label):
@@ -28,7 +29,8 @@ def get_chroma_path():
 
 
 def init_chromadb():
-    global chroma_client, chroma_collection, _current_embed_label
+    global chroma_client, chroma_collection, _current_embed_label, _store_client_cache
+    _store_client_cache = {}  # clear stats cache on reinit
     chroma_path = get_chroma_path()
     if not chroma_path:
         logger.warning("No index folder set, cannot initialize ChromaDB")
@@ -61,7 +63,7 @@ def get_chromadb_stats():
         "all_stores": [],
     }
 
-    # List all per-model ChromaDB directories
+    # List all per-model ChromaDB directories (reuse cached clients)
     if config["index_folder"]:
         chroma_base = os.path.join(config["index_folder"], CHROMA_BASE_DIR)
         if os.path.isdir(chroma_base):
@@ -70,11 +72,15 @@ def get_chromadb_stats():
                 if not os.path.isdir(store_path):
                     continue
                 try:
-                    client = chromadb.PersistentClient(path=store_path)
-                    col = client.get_or_create_collection(
-                        name="photo_index",
-                        metadata={"hnsw:space": "cosine"},
-                    )
+                    if store_path in _store_client_cache:
+                        _, col = _store_client_cache[store_path]
+                    else:
+                        client = chromadb.PersistentClient(path=store_path)
+                        col = client.get_or_create_collection(
+                            name="photo_index",
+                            metadata={"hnsw:space": "cosine"},
+                        )
+                        _store_client_cache[store_path] = (client, col)
                     count = col.count()
                 except Exception:
                     count = -1

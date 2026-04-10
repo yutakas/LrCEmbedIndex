@@ -36,12 +36,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent, ImageContent
 
 from config import config, load_config, VERSION
-from vectorstore import init_chromadb, search_photos as vs_search, get_chromadb_stats
+from vectorstore import init_chromadb, search_photos as vs_search
 from embedding import get_embedding
-from metadata import (
-    load_photo_metadata, load_thumbnail,
-    count_metadata_files, collect_metadata_stats,
-)
+from metadata import load_photo_metadata, load_thumbnail, count_metadata_files
+from routes import compute_stats_cached
 
 # Log to stderr — stdout is the MCP stdio transport
 logging.basicConfig(
@@ -201,24 +199,7 @@ async def get_stats() -> str:
     """Return index statistics: metadata counts, model info, ChromaDB stats."""
     _ensure_init()
 
-    meta_stats = await asyncio.to_thread(collect_metadata_stats)
-    chroma_stats = await asyncio.to_thread(get_chromadb_stats)
-
-    safe_config = {k: v for k, v in config.items() if "api_key" not in k}
-
-    stats = {
-        "metadata": {
-            "file_count": await asyncio.to_thread(count_metadata_files),
-            "vision_models": meta_stats.get("vision_models", {}),
-            "embed_models": meta_stats.get("embed_models", {}),
-            "thumbnail_count": meta_stats.get("thumbnail_count", 0),
-            "oldest_entry": meta_stats.get("oldest_entry"),
-            "newest_entry": meta_stats.get("newest_entry"),
-        },
-        "chromadb": chroma_stats,
-        "config": safe_config,
-        "version": VERSION,
-    }
+    stats = await asyncio.to_thread(compute_stats_cached)
     return json.dumps(stats, indent=2)
 
 
