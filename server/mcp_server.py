@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent, ImageContent
 
-from config import config, load_config, VERSION
+from config import config, load_config
 from vectorstore import init_chromadb, search_photos as vs_search
 from embedding import get_embedding
 from metadata import load_photo_metadata, load_thumbnail, count_metadata_files
