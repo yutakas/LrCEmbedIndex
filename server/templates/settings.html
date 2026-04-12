@@ -160,6 +160,7 @@
     <span>
       <a href="/">Search</a>
       <a href="/stats-ui">Stats</a>
+      <a href="/logs-ui">Logs</a>
       <a href="/privacy">Privacy</a>
       <a href="/licenses">Licenses</a>
     </span>
@@ -222,6 +223,24 @@ function renderForm() {
         </div>
         <span>Strip GPS from EXIF before sending to cloud APIs</span>
       </div>
+    </div>
+  </div>`;
+
+  // Debug & Logging
+  html += `<div class="section">
+    <div class="section-title">Debug & Logging</div>
+    <div class="field">
+      <div class="toggle-wrap" onclick="toggleCheck('debug_logging')">
+        <div class="toggle">
+          <input type="checkbox" id="debug_logging" ${c.debug_logging ? 'checked' : ''}>
+          <span class="slider"></span>
+        </div>
+        <span>Enable debug logging</span>
+      </div>
+    </div>
+    <div class="field" style="font-size:0.75rem;color:#888;margin-top:0.25rem">
+      Verbose search diagnostics: embedding vectors, raw results, and model details.
+      View logs at <a href="/logs-ui" style="color:#6b8afd">Logs</a>.
     </div>
   </div>`;
 
@@ -478,6 +497,7 @@ async function saveSettings() {
     search_relevance: val('search_relevance'),
     thumbnail_store_size: val('thumbnail_store_size'),
     strip_gps_for_cloud: val('strip_gps_for_cloud'),
+    debug_logging: val('debug_logging'),
     patrol_enabled: val('patrol_enabled'),
     patrol_interval_minutes: val('patrol_interval_minutes'),
     patrol_batch_size: val('patrol_batch_size'),

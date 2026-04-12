@@ -67,6 +67,22 @@
   .loading { text-align: center; padding: 3rem; color: #666; }
   .error { text-align: center; padding: 3rem; color: #f87171; }
 
+  .title-row {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem;
+  }
+  .title-row h1 { margin-bottom: 0; }
+  .refresh-btn {
+    padding: 0.35rem 0.7rem; font-size: 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #aaa; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  }
+  .refresh-btn:hover { border-color: #6b8afd; color: #6b8afd; }
+  .cache-badge {
+    font-size: 0.65rem; color: #888; background: #2a2a2a;
+    border: 1px solid #444; border-radius: 4px;
+    padding: 0.15rem 0.4rem; margin-left: 0.4rem;
+  }
+
   .footer {
     margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
     display: flex; justify-content: space-between; align-items: center;
@@ -78,12 +94,16 @@
 </head>
 <body>
 <div class="container">
-  <h1>LrCEmbedIndex <span>Stats</span></h1>
+  <div class="title-row">
+    <h1>LrCEmbedIndex <span>Stats</span></h1>
+    <button class="refresh-btn" onclick="loadStats()">Refresh</button>
+  </div>
   <div id="content"><div class="loading">Loading stats...</div></div>
   <div class="footer">
     <span id="versionInfo"></span>
     <span>
       <a href="/">Search</a>
+      <a href="/logs-ui">Logs</a>
       <a href="/settings-ui">Settings</a>
       <a href="/privacy">Privacy</a>
       <a href="/licenses">Licenses</a>
@@ -118,7 +138,9 @@ async function loadStats() {
     html += card('Indexed Photos', meta.total_files || 0);
     html += card('Thumbnails', meta.thumbnail_files || 0);
     html += card('ChromaDB Vectors', chroma.current_count || 0);
-    html += card('Response Time', (data.elapsed || 0) + 's');
+    const elapsed = (data.elapsed || 0) + 's';
+    const cachedBadge = data.cached ? '<span class="cache-badge">cached</span>' : '';
+    html += card('Response Time', elapsed, cachedBadge);
     html += '</div>';
 
     // Date range
@@ -193,11 +215,11 @@ async function loadStats() {
   }
 }
 
-function card(label, value, sub) {
+function card(label, value, subHtml) {
   return `<div class="card">
     <div class="card-label">${escapeHtml(label)}</div>
     <div class="card-value">${escapeHtml(String(value))}</div>
-    ${sub ? '<div class="card-sub">' + escapeHtml(sub) + '</div>' : ''}
+    ${subHtml ? '<div class="card-sub">' + subHtml + '</div>' : ''}
   </div>`;
 }
 

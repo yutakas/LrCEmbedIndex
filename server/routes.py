@@ -5,6 +5,7 @@ import tempfile
 import time
 import os
 import sys
+from collections import deque
 from functools import wraps
 from urllib.parse import unquote
 
@@ -26,6 +27,27 @@ from embedding import get_embedding
 from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
 
 logger = logging.getLogger(__name__)
+
+
+class LogCapture(logging.Handler):
+    """In-memory log handler that stores recent log entries for the web UI."""
+
+    def __init__(self, max_lines=2000):
+        super().__init__()
+        self.logs = deque(maxlen=max_lines)
+        self.setFormatter(logging.Formatter(datefmt="%Y-%m-%d %H:%M:%S"))
+
+    def emit(self, record):
+        self.logs.append({
+            "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created)),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+        })
+
+
+log_capture = LogCapture()
+logging.getLogger().addHandler(log_capture)
 
 api = Blueprint("api", __name__)
 
@@ -109,6 +131,27 @@ def licenses_page():
 def settings_ui():
     """Serve the settings web UI page."""
     return render_template("settings.html")
+
+
+@api.route("/logs-ui", methods=["GET"])
+def logs_ui():
+    """Serve the log viewer page."""
+    return render_template("logs.html")
+
+
+@api.route("/logs", methods=["GET"])
+def get_logs():
+    """Return captured server logs."""
+    limit = request.args.get("limit", 500, type=int)
+    logs_list = list(log_capture.logs)[-limit:]
+    return jsonify({"status": "ok", "logs": logs_list, "version": VERSION})
+
+
+@api.route("/logs/clear", methods=["POST"])
+def clear_logs():
+    """Clear the in-memory log buffer."""
+    log_capture.logs.clear()
+    return jsonify({"status": "ok"})
 
 
 @api.route("/settings", methods=["GET"])
@@ -386,6 +429,7 @@ def index_photo():
                                     "message": "Original file not accessible and "
                                     "no X-Content-Hash header provided"}), 400
             upsert_photo(doc_id, embedding, description, image_path)
+            invalidate_stats_cache()
 
             elapsed = time.time() - t_start
             skipped_parts = []
@@ -423,6 +467,10 @@ def search_photo():
             return jsonify({"status": "error", "message": "Missing query"}), 400
 
         query = data["query"]
+        max_results = data.get("max_results", config.get("search_max_results", 10))
+        relevance = data.get("relevance", config.get("search_relevance", 50))
+        logger.debug(f"Search request: query='{query}', model={get_embed_model_label()}, "
+                     f"max_results={max_results}, relevance={relevance}")
 
         # Get embedding for the search query
         t_embed = time.time()
@@ -431,9 +479,6 @@ def search_photo():
         if not embedding:
             return jsonify({"status": "error", "message": "Failed to generate query embedding"}), 500
 
-        # Per-request overrides from the search dialog, fall back to config
-        max_results = data.get("max_results", config.get("search_max_results", 10))
-        relevance = data.get("relevance", config.get("search_relevance", 50))
         matches = search_photos(embedding, n_results=max_results, relevance=relevance)
 
         elapsed = time.time() - t_start
@@ -492,6 +537,13 @@ def update_settings():
         if "strip_gps_for_cloud" in data:
             config["strip_gps_for_cloud"] = bool(data["strip_gps_for_cloud"])
 
+        # Debug settings
+        if "debug_logging" in data:
+            config["debug_logging"] = bool(data["debug_logging"])
+            root = logging.getLogger()
+            root.setLevel(logging.DEBUG if config["debug_logging"] else logging.INFO)
+            logger.info(f"Debug logging {'enabled' if config['debug_logging'] else 'disabled'}")
+
         # Patrol settings
         if "patrol_enabled" in data:
             config["patrol_enabled"] = bool(data["patrol_enabled"])
@@ -523,41 +575,70 @@ def update_settings():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+_stats_cache = None
+_stats_cache_time = 0
+_STATS_CACHE_TTL = 60  # seconds
+
+
+def invalidate_stats_cache():
+    """Call after indexing or deleting photos to force a fresh stats computation."""
+    global _stats_cache, _stats_cache_time
+    _stats_cache = None
+    _stats_cache_time = 0
+
+
+def compute_stats_cached():
+    """Return stats dict, using a 60s TTL cache.
+
+    Shared by the /stats HTTP endpoint and the MCP get_stats tool.
+    """
+    global _stats_cache, _stats_cache_time
+    now = time.time()
+
+    if _stats_cache and (now - _stats_cache_time) < _STATS_CACHE_TTL:
+        cached = dict(_stats_cache)
+        cached["config"] = {k: v for k, v in config.items() if "api_key" not in k}
+        cached["elapsed"] = 0
+        cached["cached"] = True
+        logger.debug("Stats served from cache")
+        return cached
+
+    t_start = time.time()
+
+    meta_count = count_metadata_files()
+    meta_stats = collect_metadata_stats()
+    chroma_stats = get_chromadb_stats()
+    safe_config = {k: v for k, v in config.items() if "api_key" not in k}
+
+    elapsed = time.time() - t_start
+    logger.info(f"Stats computed in {elapsed:.1f}s")
+    result = {
+        "status": "ok",
+        "metadata": {
+            "total_files": meta_count,
+            "thumbnail_files": meta_stats.get("thumbnail_count", 0),
+            "vision_models": meta_stats.get("vision_models", {}),
+            "embed_models": meta_stats.get("embed_models", {}),
+            "oldest_entry": meta_stats.get("oldest_entry"),
+            "newest_entry": meta_stats.get("newest_entry"),
+        },
+        "chromadb": chroma_stats,
+        "config": safe_config,
+        "version": VERSION,
+        "elapsed": round(elapsed, 2),
+        "cached": False,
+    }
+    _stats_cache = result
+    _stats_cache_time = t_start
+    return result
+
+
 @api.route("/stats", methods=["GET"])
 def get_stats():
-    t_start = time.time()
     try:
-        # Metadata stats
-        meta_count = count_metadata_files()
-        meta_stats = collect_metadata_stats()
-
-        # ChromaDB stats
-        chroma_stats = get_chromadb_stats()
-
-        # Current config (redact API keys)
-        safe_config = {k: v for k, v in config.items() if "api_key" not in k}
-
-        elapsed = time.time() - t_start
-        logger.info(f"GET /stats completed in {elapsed:.1f}s")
-        return jsonify({
-            "status": "ok",
-            "metadata": {
-                "total_files": meta_count,
-                "thumbnail_files": meta_stats.get("thumbnail_count", 0),
-                "vision_models": meta_stats.get("vision_models", {}),
-                "embed_models": meta_stats.get("embed_models", {}),
-                "oldest_entry": meta_stats.get("oldest_entry"),
-                "newest_entry": meta_stats.get("newest_entry"),
-            },
-            "chromadb": chroma_stats,
-            "config": safe_config,
-            "version": VERSION,
-            "elapsed": round(elapsed, 2),
-        })
-
+        return jsonify(compute_stats_cached())
     except Exception as e:
-        elapsed = time.time() - t_start
-        logger.exception(f"GET /stats failed in {elapsed:.1f}s: {e}")
+        logger.exception(f"GET /stats failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -677,6 +758,7 @@ def delete_metadata():
     if not deleted:
         return jsonify({"status": "error", "message": "No metadata found"}), 404
 
+    invalidate_stats_cache()
     return jsonify({"status": "ok", "message": "Photo data deleted"})
 
 

@@ -15,6 +15,7 @@ Run the LrCEmbedIndex server in a Docker container, accessible from other machin
 ```bash
 # From the project root
 INDEX_FOLDER=/path/to/your/photos ./docker/rebuild.sh
+INDEX_FOLDER='//d/Photo/LrcEmbIndex' PHOTO_FOLDER='//e/Photo' ./docker/rebuild.sh
 ```
 
 The server will be available at `http://<hostname>:8600`.
@@ -28,6 +29,7 @@ Open `http://<hostname>:8600/settings-ui` and set the **Index Folder** to `/data
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INDEX_FOLDER` | `./docker/data` | Host path for index/metadata storage, mounted to `/data` in the container |
+| `TZ` | Auto-detected | Host timezone (e.g. `Asia/Tokyo`). `rebuild.sh` detects this automatically; set it in `.env` to override. Required for patrol time windows to use local time |
 
 ### Volumes
 
