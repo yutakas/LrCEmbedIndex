@@ -38,18 +38,24 @@ class PatrolWorker:
         self._stop_event = threading.Event()
         self._interrupt_event = threading.Event()
         self._pause_event = threading.Event()
+        self._wake_event = threading.Event()
         self._lock = threading.Lock()
+        self._force_scan = False
 
         # Status tracking
-        self._state = "idle"       # idle, scanning, paused, stopped
+        self._state = "idle"       # idle, scanning, waiting, paused, stopped
         self._files_processed = 0
         self._files_remaining = 0
         self._current_file = ""
         self._last_scan_time = None
         self._errors = 0
 
-    def start(self):
-        """Start (or resume) the patrol worker thread."""
+    def start(self, force=False):
+        """Start (or resume) the patrol worker thread.
+
+        Args:
+            force: If True, run a scan immediately regardless of the time window.
+        """
         with self._lock:
             if self._thread and self._thread.is_alive():
                 # Resume if paused
@@ -57,11 +63,15 @@ class PatrolWorker:
                     self._pause_event.clear()
                     self._state = "idle"
                     logger.info("Patrol resumed")
+                if force:
+                    self._force_scan = True
+                    self._wake_event.set()
                 return
 
             self._stop_event.clear()
             self._pause_event.clear()
             self._interrupt_event.clear()
+            self._force_scan = force
             self._state = "idle"
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
@@ -71,6 +81,7 @@ class PatrolWorker:
         """Stop the patrol worker thread."""
         with self._lock:
             self._stop_event.set()
+            self._wake_event.set()
             self._pause_event.clear()
             self._state = "stopped"
             logger.info("Patrol worker stopping")
@@ -101,14 +112,21 @@ class PatrolWorker:
 
     def get_status(self):
         """Return current status dict for the API."""
-        return {
+        status = {
             "state": self._state,
+            "running": self._thread is not None and self._thread.is_alive(),
             "files_processed": self._files_processed,
             "files_remaining": self._files_remaining,
             "current_file": self._current_file,
             "last_scan_time": self._last_scan_time,
             "errors": self._errors,
         }
+        if self._state == "waiting":
+            start_str = config.get("patrol_start_time", "")
+            end_str = config.get("patrol_end_time", "")
+            if start_str and end_str:
+                status["waiting_reason"] = f"outside active hours {start_str}\u2013{end_str}"
+        return status
 
     def _run(self):
         """Main patrol loop — scan, sleep, repeat."""
@@ -118,18 +136,75 @@ class PatrolWorker:
             if first_run:
                 first_run = False
             else:
-                # Wait for the configured interval between scans
+                # Show correct state while sleeping
+                if not self._is_within_time_window():
+                    self._state = "waiting"
+                else:
+                    self._state = "idle"
+                # Wait for the configured interval, but wake on stop or force_scan
                 interval = config.get("patrol_interval_minutes", 5) * 60
-                if self._stop_event.wait(timeout=interval):
-                    break  # Stop event set during sleep
+                self._wake_event.clear()
+                self._wake_event.wait(timeout=interval)
+                if self._stop_event.is_set():
+                    break
 
             if self._pause_event.is_set():
+                continue
+
+            # Check time window — bypass if manually forced
+            force = self._force_scan
+            if force:
+                self._force_scan = False
+                logger.info("Patrol: forced scan requested, bypassing time window")
+            elif not self._is_within_time_window():
+                self._state = "waiting"
                 continue
 
             self._do_scan()
 
         self._state = "stopped"
         logger.info("Patrol loop stopped")
+
+    def _is_within_time_window(self):
+        """Check if the current local time is within the configured patrol window.
+
+        Returns True if no window is configured (both fields empty) or if the
+        current time falls inside the start–end range.  Supports overnight
+        windows (e.g. start=22:00 end=06:00).
+        """
+        start_str = config.get("patrol_start_time", "").strip()
+        end_str = config.get("patrol_end_time", "").strip()
+        if not start_str or not end_str:
+            return True
+
+        try:
+            sp = start_str.split(":")
+            ep = end_str.split(":")
+            sh, sm = int(sp[0]), int(sp[1])
+            eh, em = int(ep[0]), int(ep[1])
+            if not (0 <= sh <= 23 and 0 <= sm <= 59
+                    and 0 <= eh <= 23 and 0 <= em <= 59):
+                raise ValueError
+        except (ValueError, IndexError, AttributeError):
+            logger.warning(f"Patrol: invalid time window '{start_str}'-'{end_str}', ignoring")
+            return True
+
+        now = datetime.now()
+        cur = now.hour * 60 + now.minute
+        start = sh * 60 + sm
+        end = eh * 60 + em
+
+        if start <= end:
+            # Same-day window, e.g. 08:00–18:00
+            inside = start <= cur < end
+        else:
+            # Overnight window, e.g. 22:00–06:00
+            inside = cur >= start or cur < end
+
+        if not inside:
+            logger.debug(f"Patrol: outside time window {start_str}-{end_str} "
+                         f"(now {now.strftime('%H:%M')}), skipping scan")
+        return inside
 
     def _do_scan(self):
         """Scan all configured folders and index new/changed photos."""
