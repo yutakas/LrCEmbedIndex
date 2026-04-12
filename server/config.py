@@ -60,6 +60,8 @@ config = {
     "patrol_folders": [],       # list of {"path": str, "recursive": bool}
     "patrol_interval_minutes": 5,
     "patrol_batch_size": 10,    # photos to process per batch before checking for interrupts
+    "patrol_start_time": "",    # HH:MM 24h format, empty = no restriction
+    "patrol_end_time": "",      # HH:MM 24h format, empty = no restriction
 }
 
 VERSION = "1.2.0"
@@ -104,9 +106,68 @@ def save_config():
             logger.info(f"Config saved to {path}")
 
 
+# Mapping from environment variable names to config keys and their types.
+# Types: str, int, bool
+_ENV_MAP = {
+    "INDEX_FOLDER":             ("index_folder", str),
+    "VISION_MODE":              ("vision_mode", str),
+    "OLLAMA_VISION_ENDPOINT":   ("ollama_vision_endpoint", str),
+    "OLLAMA_VISION_MODEL":      ("ollama_vision_model", str),
+    "OPENAI_VISION_API_KEY":    ("openai_vision_api_key", str),
+    "OPENAI_VISION_MODEL":      ("openai_vision_model", str),
+    "CLAUDE_VISION_API_KEY":    ("claude_vision_api_key", str),
+    "CLAUDE_VISION_MODEL":      ("claude_vision_model", str),
+    "EMBED_MODE":               ("embed_mode", str),
+    "OLLAMA_EMBED_ENDPOINT":    ("ollama_embed_endpoint", str),
+    "OLLAMA_EMBED_MODEL":       ("ollama_embed_model", str),
+    "OPENAI_EMBED_API_KEY":     ("openai_embed_api_key", str),
+    "OPENAI_EMBED_MODEL":       ("openai_embed_model", str),
+    "VOYAGE_EMBED_API_KEY":     ("voyage_embed_api_key", str),
+    "VOYAGE_EMBED_MODEL":       ("voyage_embed_model", str),
+    "SEARCH_MAX_RESULTS":       ("search_max_results", int),
+    "SEARCH_RELEVANCE":         ("search_relevance", int),
+    "THUMBNAIL_STORE_SIZE":     ("thumbnail_store_size", int),
+    "STRIP_GPS_FOR_CLOUD":      ("strip_gps_for_cloud", bool),
+    "DEBUG_LOGGING":            ("debug_logging", bool),
+    "PATROL_ENABLED":           ("patrol_enabled", bool),
+    "PATROL_INTERVAL_MINUTES":  ("patrol_interval_minutes", int),
+    "PATROL_BATCH_SIZE":        ("patrol_batch_size", int),
+    "PATROL_START_TIME":        ("patrol_start_time", str),
+    "PATROL_END_TIME":          ("patrol_end_time", str),
+}
+
+
+def _apply_env_overrides():
+    """Apply environment variables to config as defaults (before JSON load)."""
+    applied = []
+    for env_name, (cfg_key, typ) in _ENV_MAP.items():
+        val = os.environ.get(env_name)
+        if not val:
+            continue
+        if typ is bool:
+            config[cfg_key] = val.lower() in ("true", "1", "yes")
+        elif typ is int:
+            try:
+                config[cfg_key] = int(val)
+            except ValueError:
+                logger.warning(f"Invalid integer for {env_name}: {val}")
+                continue
+        else:
+            config[cfg_key] = val
+        applied.append(env_name)
+    if applied:
+        logger.info(f"Config from environment: {', '.join(applied)}")
+
+
 def load_config():
-    """Load config from disk. Encrypted API key fields are decrypted."""
+    """Load config from disk. Encrypted API key fields are decrypted.
+
+    Precedence (highest wins): JSON config file > environment variables > defaults.
+    """
     with _config_lock:
+        # Apply environment variables over hardcoded defaults
+        _apply_env_overrides()
+
         home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
         if os.path.exists(home_config):
             with open(home_config, "r") as f:
@@ -128,6 +189,11 @@ def load_config():
                     config.update(saved)
                 logger.info(f"Loaded config from {home_config}")
                 return True
+
+        # No JSON config found — env overrides are the active config
+        if config.get("index_folder"):
+            logger.info("Config initialized from environment variables")
+            return True
         return False
 
 
