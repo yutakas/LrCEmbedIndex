@@ -113,9 +113,15 @@
 <script>
 const contentEl = document.getElementById('content');
 
+let refreshTimer = null;
+
 async function loadStats() {
   try {
     const resp = await fetch('/stats');
+    if (!resp.ok) {
+      contentEl.innerHTML = `<div class="error">Server returned HTTP ${resp.status}</div>`;
+      return;
+    }
     const data = await resp.json();
 
     if (data.status !== 'ok') {
@@ -132,6 +138,11 @@ async function loadStats() {
     const cfg = data.config || {};
 
     let html = '';
+
+    // Computing banner
+    if (data.computing) {
+      html += '<div class="loading">Computing stats in background\u2026</div>';
+    }
 
     // Summary cards
     html += '<div class="cards">';
@@ -210,6 +221,12 @@ async function loadStats() {
 
     contentEl.innerHTML = html;
 
+    // Auto-refresh while stats are being computed
+    clearTimeout(refreshTimer);
+    if (data.computing) {
+      refreshTimer = setTimeout(loadStats, 5000);
+    }
+
   } catch (err) {
     contentEl.innerHTML = `<div class="error">Error: ${escapeHtml(err.message)}</div>`;
   }
@@ -226,7 +243,7 @@ function card(label, value, subHtml) {
 function formatDate(iso) {
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'});
   } catch (e) { return iso; }
 }
 

@@ -138,7 +138,8 @@
     background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
     color: #aaa; cursor: pointer;
   }
-  .patrol-controls button:hover { border-color: #6b8afd; color: #6b8afd; }
+  .patrol-controls button:hover:not(:disabled) { border-color: #6b8afd; color: #6b8afd; }
+  .patrol-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .loading { text-align: center; padding: 3rem; color: #666; }
 
@@ -370,6 +371,16 @@ function renderForm() {
       <input type="number" id="patrol_batch_size" value="${c.patrol_batch_size || 10}" min="1" max="100">
     </div>
     <div class="field">
+      <label class="field-label">Active Hours (leave empty for always)</label>
+      <div class="field-row">
+        <input type="text" id="patrol_start_time" value="${esc(c.patrol_start_time || '')}" placeholder="HH:MM" maxlength="5" style="width:80px;text-align:center">
+        <span style="color:#888;font-size:0.85rem">to</span>
+        <input type="text" id="patrol_end_time" value="${esc(c.patrol_end_time || '')}" placeholder="HH:MM" maxlength="5" style="width:80px;text-align:center">
+        <button class="reveal-btn" onclick="document.getElementById('patrol_start_time').value='';document.getElementById('patrol_end_time').value=''">Clear</button>
+      </div>
+      <div style="font-size:0.7rem;color:#666;margin-top:0.25rem">24h format, e.g. 08:00 to 18:00. Overnight windows supported (e.g. 22:00 to 06:00)</div>
+    </div>
+    <div class="field">
       <label class="field-label">Watched Folders</label>
       <div id="folder_list" class="folder-list">
         ${folders.map((f, i) => folderRow(f, i)).join('')}
@@ -377,6 +388,7 @@ function renderForm() {
       <button class="add-btn" onclick="addFolder()">+ Add Folder</button>
     </div>
     <div id="patrol_status_area"></div>
+    <div id="patrol_msg" style="font-size:0.8rem;margin-top:0.4rem;min-height:1.2em"></div>
   </div>`;
 
   // Save
@@ -501,6 +513,8 @@ async function saveSettings() {
     patrol_enabled: val('patrol_enabled'),
     patrol_interval_minutes: val('patrol_interval_minutes'),
     patrol_batch_size: val('patrol_batch_size'),
+    patrol_start_time: val('patrol_start_time'),
+    patrol_end_time: val('patrol_end_time'),
     patrol_folders: collectFolders(),
   };
 
@@ -544,19 +558,24 @@ async function loadPatrolStatus() {
     const data = await resp.json();
     if (data.status !== 'ok') return;
     const s = data.patrol;
+    const running = s.running;
+    const stateColor = running ? (s.state === 'scanning' ? '#4ade80' : '#6b8afd') : '#888';
+    const stateText = running
+      ? (s.state === 'scanning' ? 'scanning' : s.state === 'waiting' ? 'waiting' : s.state === 'paused' ? 'paused' : 'running (idle)')
+      : (s.state || 'stopped');
     area.innerHTML = `
       <div class="patrol-status">
-        <span class="status-label">Patrol Status:</span>
-        <span class="status-value">${esc(s.state || 'unknown')}</span>
+        <span class="status-label">Patrol:</span>
+        <span class="status-value" style="color:${stateColor}">${esc(stateText)}${s.waiting_reason ? ' (' + esc(s.waiting_reason) + ')' : ''}</span>
         ${s.files_processed != null ? ` | <span class="status-label">Processed:</span> <span class="status-value">${s.files_processed}</span>` : ''}
         ${s.files_remaining != null ? ` | <span class="status-label">Remaining:</span> <span class="status-value">${s.files_remaining}</span>` : ''}
         ${s.current_file ? ` | <span class="status-label">Current:</span> <span class="status-value">${esc(s.current_file.split('/').pop())}</span>` : ''}
         ${s.last_scan_time ? ` | <span class="status-label">Last scan:</span> <span class="status-value">${esc(s.last_scan_time)}</span>` : ''}
       </div>
       <div class="patrol-controls">
-        <button onclick="patrolAction('start')">Start</button>
-        <button onclick="patrolAction('pause')">Pause</button>
-        <button onclick="patrolAction('stop')">Stop</button>
+        <button onclick="patrolAction('start')" ${running && s.state !== 'paused' ? 'disabled' : ''}>Start</button>
+        <button onclick="patrolAction('pause')" ${!running || s.state === 'paused' ? 'disabled' : ''}>Pause</button>
+        <button onclick="patrolAction('stop')" ${!running ? 'disabled' : ''}>Stop</button>
       </div>
     `;
   } catch (e) {
@@ -565,10 +584,28 @@ async function loadPatrolStatus() {
 }
 
 async function patrolAction(action) {
+  const area = document.getElementById('patrol_status_area');
+  if (area) area.querySelectorAll('.patrol-controls button').forEach(b => b.disabled = true);
   try {
-    await fetch('/patrol/' + action, { method: 'POST' });
-    setTimeout(loadPatrolStatus, 500);
-  } catch (e) {}
+    const resp = await fetch('/patrol/' + action, { method: 'POST' });
+    const data = await resp.json();
+    if (data.status !== 'ok') {
+      showPatrolMsg(data.message || 'Action failed', true);
+    } else {
+      showPatrolMsg(action.charAt(0).toUpperCase() + action.slice(1) + ' successful');
+    }
+  } catch (e) {
+    showPatrolMsg('Request failed: ' + e.message, true);
+  }
+  setTimeout(loadPatrolStatus, 500);
+}
+
+function showPatrolMsg(text, isError) {
+  const el = document.getElementById('patrol_msg');
+  if (!el) return;
+  el.style.color = isError ? '#f87171' : '#4ade80';
+  el.textContent = text;
+  setTimeout(() => { el.textContent = ''; }, 4000);
 }
 
 function esc(s) {

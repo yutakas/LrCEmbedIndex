@@ -2,6 +2,7 @@ import json
 import logging
 import subprocess
 import tempfile
+import threading
 import time
 import os
 import sys
@@ -81,13 +82,16 @@ def with_patrol_interrupt(f):
 
 
 @api.after_request
-def add_cors_headers(response):
-    """Restrict cross-origin requests to localhost only."""
+def add_headers(response):
+    """Add CORS and cache-control headers."""
     origin = request.headers.get("Origin", "")
     if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    # Prevent browser from caching JSON API responses
+    if response.content_type and "json" in response.content_type:
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -553,6 +557,20 @@ def update_settings():
             config["patrol_interval_minutes"] = max(1, int(data["patrol_interval_minutes"]))
         if "patrol_batch_size" in data:
             config["patrol_batch_size"] = max(1, int(data["patrol_batch_size"]))
+        for key in ("patrol_start_time", "patrol_end_time"):
+            if key in data:
+                val = (data[key] or "").strip()
+                if val:
+                    try:
+                        parts = val.split(":")
+                        h, m = int(parts[0]), int(parts[1])
+                        if not (0 <= h <= 23 and 0 <= m <= 59):
+                            raise ValueError
+                        val = f"{h:02d}:{m:02d}"
+                    except (ValueError, IndexError, AttributeError):
+                        return jsonify({"status": "error",
+                                        "message": f"Invalid time format for {key}: '{data[key]}'"}), 400
+                config[key] = val
 
         save_config()
         save_last_config_pointer()
@@ -577,60 +595,102 @@ def update_settings():
 
 _stats_cache = None
 _stats_cache_time = 0
-_STATS_CACHE_TTL = 60  # seconds
+_stats_computing = False
+_stats_lock = threading.Lock()
+_STATS_CACHE_TTL = 300  # seconds
 
 
 def invalidate_stats_cache():
     """Call after indexing or deleting photos to force a fresh stats computation."""
-    global _stats_cache, _stats_cache_time
-    _stats_cache = None
+    global _stats_cache_time
     _stats_cache_time = 0
+    _trigger_stats_refresh()
+
+
+def _compute_stats_background():
+    """Compute stats in a background thread and update the cache."""
+    global _stats_cache, _stats_cache_time, _stats_computing
+    try:
+        t_start = time.time()
+
+        meta_count = count_metadata_files()
+        meta_stats = collect_metadata_stats()
+        chroma_stats = get_chromadb_stats()
+        safe_config = {k: v for k, v in config.items() if "api_key" not in k}
+
+        elapsed = time.time() - t_start
+        logger.info(f"Stats computed in {elapsed:.1f}s")
+        result = {
+            "status": "ok",
+            "metadata": {
+                "total_files": meta_count,
+                "thumbnail_files": meta_stats.get("thumbnail_count", 0),
+                "vision_models": meta_stats.get("vision_models", {}),
+                "embed_models": meta_stats.get("embed_models", {}),
+                "oldest_entry": meta_stats.get("oldest_entry"),
+                "newest_entry": meta_stats.get("newest_entry"),
+            },
+            "chromadb": chroma_stats,
+            "config": safe_config,
+            "version": VERSION,
+            "elapsed": round(elapsed, 2),
+            "cached": False,
+        }
+        _stats_cache = result
+        _stats_cache_time = time.time()
+    except Exception:
+        logger.exception("Background stats computation failed")
+    finally:
+        with _stats_lock:
+            _stats_computing = False
+
+
+def _trigger_stats_refresh():
+    """Kick off a background stats computation if one isn't already running."""
+    global _stats_computing
+    with _stats_lock:
+        if _stats_computing:
+            return
+        _stats_computing = True
+    threading.Thread(target=_compute_stats_background, daemon=True).start()
 
 
 def compute_stats_cached():
-    """Return stats dict, using a 60s TTL cache.
+    """Return stats dict, using a background-refreshed cache.
+
+    Never blocks for a full stats computation. If the cache is stale or empty,
+    triggers a background refresh and returns whatever is available (stale cache
+    or a placeholder).
 
     Shared by the /stats HTTP endpoint and the MCP get_stats tool.
     """
-    global _stats_cache, _stats_cache_time
     now = time.time()
+    stale = (now - _stats_cache_time) >= _STATS_CACHE_TTL
 
-    if _stats_cache and (now - _stats_cache_time) < _STATS_CACHE_TTL:
+    if stale:
+        _trigger_stats_refresh()
+
+    if _stats_cache:
         cached = dict(_stats_cache)
         cached["config"] = {k: v for k, v in config.items() if "api_key" not in k}
-        cached["elapsed"] = 0
         cached["cached"] = True
-        logger.debug("Stats served from cache")
+        cached["computing"] = _stats_computing
         return cached
 
-    t_start = time.time()
-
-    meta_count = count_metadata_files()
-    meta_stats = collect_metadata_stats()
-    chroma_stats = get_chromadb_stats()
-    safe_config = {k: v for k, v in config.items() if "api_key" not in k}
-
-    elapsed = time.time() - t_start
-    logger.info(f"Stats computed in {elapsed:.1f}s")
-    result = {
+    # No cache at all yet (first request after startup)
+    return {
         "status": "ok",
-        "metadata": {
-            "total_files": meta_count,
-            "thumbnail_files": meta_stats.get("thumbnail_count", 0),
-            "vision_models": meta_stats.get("vision_models", {}),
-            "embed_models": meta_stats.get("embed_models", {}),
-            "oldest_entry": meta_stats.get("oldest_entry"),
-            "newest_entry": meta_stats.get("newest_entry"),
-        },
-        "chromadb": chroma_stats,
-        "config": safe_config,
+        "metadata": {"total_files": 0, "thumbnail_files": 0,
+                      "vision_models": {}, "embed_models": {},
+                      "oldest_entry": None, "newest_entry": None},
+        "chromadb": {"current_model": "", "current_count": 0,
+                     "current_path": "", "all_stores": []},
+        "config": {k: v for k, v in config.items() if "api_key" not in k},
         "version": VERSION,
-        "elapsed": round(elapsed, 2),
+        "elapsed": 0,
         "cached": False,
+        "computing": True,
     }
-    _stats_cache = result
-    _stats_cache_time = t_start
-    return result
 
 
 @api.route("/stats", methods=["GET"])
@@ -784,7 +844,7 @@ def patrol_start():
     config["patrol_enabled"] = True
     save_config()
     save_last_config_pointer()
-    worker.start()
+    worker.start(force=True)
     return jsonify({"status": "ok", "patrol": worker.get_status()})
 
 
