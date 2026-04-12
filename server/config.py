@@ -155,8 +155,17 @@ def _apply_env_overrides():
         else:
             config[cfg_key] = val
         applied.append(env_name)
+
     if applied:
         logger.info(f"Config from environment: {', '.join(applied)}")
+
+
+def _apply_photo_folder_default():
+    """Default patrol_folders to PHOTO_FOLDER env var if empty."""
+    photo_folder = os.environ.get("PHOTO_FOLDER")
+    if photo_folder and not config["patrol_folders"]:
+        config["patrol_folders"] = [photo_folder]
+        logger.info(f"patrol_folders defaulted to PHOTO_FOLDER: {photo_folder}")
 
 
 def load_config():
@@ -188,9 +197,11 @@ def load_config():
                             saved[k] = decrypt_value(saved[k])
                     config.update(saved)
                 logger.info(f"Loaded config from {home_config}")
+                _apply_photo_folder_default()
                 return True
 
         # No JSON config found — env overrides are the active config
+        _apply_photo_folder_default()
         if config.get("index_folder"):
             logger.info("Config initialized from environment variables")
             return True

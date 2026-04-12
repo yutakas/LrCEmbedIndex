@@ -24,6 +24,7 @@ services:
       # Server config — set in .env, applied as defaults.
       # Once saved via the Settings UI, the JSON config takes precedence.
       - INDEX_FOLDER=/data
+      - PHOTO_FOLDER=/photos
       - VISION_MODE=${VISION_MODE:-ollama}
       - OLLAMA_VISION_ENDPOINT=${OLLAMA_VISION_ENDPOINT:-http://host.docker.internal:11434}
       - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL:-}

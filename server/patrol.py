@@ -50,6 +50,15 @@ class PatrolWorker:
         self._last_scan_time = None
         self._errors = 0
 
+        # Timing tracking
+        self._scan_start_time = None
+        self._scan_elapsed = None        # seconds for last completed scan
+        self._current_file_start = None
+        self._current_vision_time = None
+        self._current_embed_time = None
+        self._total_discovered = 0
+        self._recent_files = []          # list of recent file dicts (max 50)
+
     def start(self, force=False):
         """Start (or resume) the patrol worker thread.
 
@@ -120,6 +129,13 @@ class PatrolWorker:
             "current_file": self._current_file,
             "last_scan_time": self._last_scan_time,
             "errors": self._errors,
+            "total_discovered": self._total_discovered,
+            "scan_start_time": self._scan_start_time,
+            "scan_elapsed": self._scan_elapsed,
+            "current_file_start": self._current_file_start,
+            "current_vision_time": self._current_vision_time,
+            "current_embed_time": self._current_embed_time,
+            "recent_files": list(self._recent_files),
         }
         if self._state == "waiting":
             start_str = config.get("patrol_start_time", "")
@@ -219,6 +235,9 @@ class PatrolWorker:
         self._state = "scanning"
         self._files_processed = 0
         self._errors = 0
+        self._scan_start_time = datetime.now(timezone.utc).isoformat()
+        self._scan_elapsed = None
+        scan_t0 = time.time()
 
         # Discover all photos across all watched folders
         all_photos = []
@@ -254,6 +273,7 @@ class PatrolWorker:
                 to_index.append(photo_path)
 
         self._files_remaining = len(to_index)
+        self._total_discovered = len(all_photos)
         logger.info(f"Patrol: found {len(all_photos)} photos, {len(to_index)} need indexing")
 
         if not to_index:
@@ -280,17 +300,44 @@ class PatrolWorker:
                 self._state = "scanning"
 
             self._current_file = photo_path
+            self._current_file_start = time.time()
+            self._current_vision_time = None
+            self._current_embed_time = None
             self._files_remaining = len(to_index) - i
 
             try:
                 self._index_photo(photo_path)
                 self._files_processed += 1
+                elapsed = time.time() - self._current_file_start
+                self._recent_files.append({
+                    "file": os.path.basename(photo_path),
+                    "status": "ok",
+                    "total_time": round(elapsed, 1),
+                    "vision_time": self._current_vision_time,
+                    "embed_time": self._current_embed_time,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
             except Exception as e:
                 logger.warning(f"Patrol: failed to index {photo_path}: {e}")
                 self._errors += 1
+                elapsed = time.time() - self._current_file_start
+                self._recent_files.append({
+                    "file": os.path.basename(photo_path),
+                    "status": "error",
+                    "error": str(e),
+                    "total_time": round(elapsed, 1),
+                    "vision_time": self._current_vision_time,
+                    "embed_time": self._current_embed_time,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+            # Keep only the last 50 entries
+            if len(self._recent_files) > 50:
+                self._recent_files = self._recent_files[-50:]
 
         self._current_file = ""
+        self._current_file_start = None
         self._last_scan_time = datetime.now(timezone.utc).isoformat()
+        self._scan_elapsed = round(time.time() - scan_t0, 1)
         if self._state == "scanning":
             self._state = "idle"
         self._save_state()
@@ -374,7 +421,8 @@ class PatrolWorker:
 
                 t_vision = time.time()
                 vision_description = describe_image(tmp_path)
-                logger.info(f"Patrol vision took {time.time() - t_vision:.1f}s for {basename}")
+                self._current_vision_time = round(time.time() - t_vision, 1)
+                logger.info(f"Patrol vision took {self._current_vision_time}s for {basename}")
 
                 exif_text = exif_to_text(exif_data,
                                         strip_gps=config.get("strip_gps_for_cloud", False))
@@ -395,7 +443,8 @@ class PatrolWorker:
             if need_embed:
                 t_embed = time.time()
                 embedding = get_embedding(description)
-                logger.info(f"Patrol embedding took {time.time() - t_embed:.1f}s for {basename}")
+                self._current_embed_time = round(time.time() - t_embed, 1)
+                logger.info(f"Patrol embedding took {self._current_embed_time}s for {basename}")
                 if not embedding:
                     logger.warning(f"Patrol: empty embedding for {basename}")
                     return

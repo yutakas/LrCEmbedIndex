@@ -137,6 +137,12 @@ def settings_ui():
     return render_template("settings.html")
 
 
+@api.route("/patrol-ui", methods=["GET"])
+def patrol_ui():
+    """Serve the patrol status page."""
+    return render_template("patrol.html")
+
+
 @api.route("/logs-ui", methods=["GET"])
 def logs_ui():
     """Serve the log viewer page."""

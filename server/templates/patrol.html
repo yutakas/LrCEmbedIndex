@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patrol - LrCEmbedIndex</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a; color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; font-weight: 500; margin-bottom: 1.5rem; color: #fff; }
+  h1 span { color: #888; font-weight: 300; }
+
+  .title-row {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem;
+  }
+  .title-row h1 { margin-bottom: 0; }
+
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem; margin-bottom: 2rem;
+  }
+  .card {
+    background: #242424; border: 1px solid #333; border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .card-label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card-value { font-size: 1.8rem; font-weight: 600; color: #fff; margin-top: 0.25rem; }
+  .card-sub { font-size: 0.75rem; color: #555; margin-top: 0.25rem; }
+
+  .section {
+    margin-bottom: 1.5rem;
+  }
+  .section-title {
+    font-size: 0.85rem; font-weight: 600; color: #999; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid #333;
+  }
+
+  .current-file-box {
+    background: #242424; border: 1px solid #333; border-radius: 8px;
+    padding: 1rem; margin-bottom: 1.5rem;
+  }
+  .current-file-name {
+    font-size: 0.95rem; color: #fff; font-weight: 500; margin-bottom: 0.5rem;
+    word-break: break-all;
+  }
+  .current-file-timers {
+    display: flex; gap: 1.5rem; font-size: 0.8rem; color: #888;
+  }
+  .timer-label { color: #666; }
+  .timer-value { color: #ccc; font-family: monospace; }
+  .timer-active { color: #4ade80; }
+
+  .progress-bar-wrap {
+    background: #333; border-radius: 4px; height: 6px; margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+  .progress-bar {
+    background: #4ade80; height: 100%; border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+
+  .table-wrap {
+    background: #242424; border-radius: 8px; overflow: hidden;
+    border: 1px solid #333;
+  }
+  table {
+    width: 100%; border-collapse: collapse;
+  }
+  th {
+    text-align: left; padding: 0.6rem 1rem;
+    font-size: 0.75rem; color: #666; text-transform: uppercase;
+    background: #1e1e1e; border-bottom: 1px solid #333;
+  }
+  td {
+    padding: 0.6rem 1rem; font-size: 0.85rem; color: #ccc;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  .status-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 0.4rem; vertical-align: middle;
+  }
+  .status-ok { background: #4ade80; }
+  .status-error { background: #f87171; }
+  .status-scanning { background: #4ade80; animation: pulse 1.5s ease-in-out infinite; }
+  .status-idle { background: #6b8afd; }
+  .status-waiting { background: #fbbf24; }
+  .status-paused { background: #a78bfa; }
+  .status-stopped { background: #888; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .controls { display: flex; gap: 0.5rem; }
+  .controls button {
+    padding: 0.4rem 0.9rem; font-size: 0.8rem;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 6px;
+    color: #aaa; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  }
+  .controls button:hover:not(:disabled) { border-color: #6b8afd; color: #6b8afd; }
+  .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .no-data { text-align: center; padding: 2rem; color: #555; font-size: 0.85rem; }
+
+  .footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; color: #555;
+  }
+  .footer a { color: #666; text-decoration: none; margin-left: 1rem; }
+  .footer a:hover { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="title-row">
+    <h1>LrCEmbedIndex <span>Patrol</span></h1>
+    <div class="controls" id="controls"></div>
+  </div>
+  <div id="content"><div class="no-data">Loading...</div></div>
+  <div class="footer">
+    <span id="versionInfo"></span>
+    <span>
+      <a href="/">Search</a>
+      <a href="/stats-ui">Stats</a>
+      <a href="/logs-ui">Logs</a>
+      <a href="/settings-ui">Settings</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/licenses">Licenses</a>
+    </span>
+  </div>
+</div>
+<script>
+const contentEl = document.getElementById('content');
+const controlsEl = document.getElementById('controls');
+let refreshTimer = null;
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmtTime(seconds) {
+  if (seconds == null) return '-';
+  if (seconds < 60) return seconds.toFixed(1) + 's';
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(0);
+  if (m < 60) return m + 'm ' + s + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+  } catch (e) { return iso; }
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'});
+  } catch (e) { return iso; }
+}
+
+function stateInfo(s) {
+  const running = s.running;
+  if (!running) return { text: s.state || 'stopped', css: 'status-stopped', color: '#888' };
+  switch (s.state) {
+    case 'scanning': return { text: 'scanning', css: 'status-scanning', color: '#4ade80' };
+    case 'waiting':  return { text: 'waiting', css: 'status-waiting', color: '#fbbf24' };
+    case 'paused':   return { text: 'paused', css: 'status-paused', color: '#a78bfa' };
+    default:         return { text: 'idle', css: 'status-idle', color: '#6b8afd' };
+  }
+}
+
+async function patrolAction(action) {
+  try {
+    const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+    if (action === 'force') {
+      opts.body = JSON.stringify({ force: true });
+      action = 'start';
+    }
+    await fetch('/patrol/' + action, opts);
+    setTimeout(loadStatus, 500);
+  } catch (e) { /* ignore */ }
+}
+
+async function loadStatus() {
+  try {
+    const [patrolResp, settingsResp] = await Promise.all([
+      fetch('/patrol/status'),
+      fetch('/settings')
+    ]);
+    const patrolData = await patrolResp.json();
+    const settingsData = await settingsResp.json();
+
+    if (patrolData.status !== 'ok') {
+      contentEl.innerHTML = '<div class="no-data">Patrol not available</div>';
+      return;
+    }
+
+    if (settingsData.version) {
+      document.getElementById('versionInfo').textContent = 'LrCEmbedIndex v' + settingsData.version;
+    }
+
+    const s = patrolData.patrol;
+    const cfg = settingsData.config || {};
+    const si = stateInfo(s);
+
+    // Controls
+    const running = s.running;
+    const paused = s.state === 'paused';
+    controlsEl.innerHTML = `
+      <button onclick="patrolAction('start')" ${running && !paused ? 'disabled' : ''}>Start</button>
+      <button onclick="patrolAction('force')">Force Scan</button>
+      <button onclick="patrolAction('pause')" ${!running || paused ? 'disabled' : ''}>Pause</button>
+      <button onclick="patrolAction('stop')" ${!running ? 'disabled' : ''}>Stop</button>
+    `;
+
+    let html = '';
+
+    // Status cards
+    const scanElapsed = s.state === 'scanning' && s.scan_start_time
+      ? (Date.now() - new Date(s.scan_start_time).getTime()) / 1000
+      : s.scan_elapsed;
+
+    html += '<div class="cards">';
+    html += `<div class="card">
+      <div class="card-label">Status</div>
+      <div class="card-value" style="font-size:1.2rem;color:${si.color}">
+        <span class="status-dot ${si.css}"></span>${esc(si.text)}
+      </div>
+      ${s.waiting_reason ? '<div class="card-sub">' + esc(s.waiting_reason) + '</div>' : ''}
+    </div>`;
+    html += `<div class="card">
+      <div class="card-label">Processed</div>
+      <div class="card-value">${s.files_processed}</div>
+      <div class="card-sub">${s.errors ? s.errors + ' error(s)' : ''}</div>
+    </div>`;
+    html += `<div class="card">
+      <div class="card-label">Remaining</div>
+      <div class="card-value">${s.files_remaining}</div>
+      <div class="card-sub">of ${s.total_discovered || '-'} discovered</div>
+    </div>`;
+    html += `<div class="card">
+      <div class="card-label">Scan Time</div>
+      <div class="card-value" style="font-size:1.2rem">${fmtTime(scanElapsed)}</div>
+      <div class="card-sub">${s.state === 'scanning' ? 'in progress' : 'last scan'}</div>
+    </div>`;
+    html += `<div class="card">
+      <div class="card-label">Last Scan</div>
+      <div class="card-value" style="font-size:1rem">${fmtDateTime(s.last_scan_time)}</div>
+    </div>`;
+    html += '</div>';
+
+    // Progress bar (only when scanning)
+    if (s.state === 'scanning' && s.total_discovered > 0) {
+      const total = s.files_processed + s.files_remaining;
+      const pct = total > 0 ? Math.round((s.files_processed / total) * 100) : 0;
+      html += `<div class="progress-bar-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>`;
+    }
+
+    // Current file
+    if (s.current_file) {
+      const fileElapsed = s.current_file_start
+        ? (Date.now() / 1000 - s.current_file_start)
+        : null;
+      html += '<div class="section"><div class="section-title">Currently Processing</div></div>';
+      html += '<div class="current-file-box">';
+      html += `<div class="current-file-name">${esc(s.current_file.split('/').pop())}</div>`;
+      html += '<div class="current-file-timers">';
+      html += `<span><span class="timer-label">Elapsed:</span> <span class="timer-value ${fileElapsed != null ? 'timer-active' : ''}">${fmtTime(fileElapsed)}</span></span>`;
+      html += `<span><span class="timer-label">Vision:</span> <span class="timer-value">${s.current_vision_time != null ? s.current_vision_time + 's' : 'pending'}</span></span>`;
+      html += `<span><span class="timer-label">Embed:</span> <span class="timer-value">${s.current_embed_time != null ? s.current_embed_time + 's' : 'pending'}</span></span>`;
+      html += '</div></div>';
+    }
+
+    // Average time per file
+    const recent = s.recent_files || [];
+    let avgSection = '';
+    if (recent.length > 0) {
+      const okFiles = recent.filter(f => f.status === 'ok');
+      if (okFiles.length > 0) {
+        const avgTotal = okFiles.reduce((a, f) => a + f.total_time, 0) / okFiles.length;
+        const visionFiles = okFiles.filter(f => f.vision_time != null);
+        const embedFiles = okFiles.filter(f => f.embed_time != null);
+        const avgVision = visionFiles.length > 0 ? visionFiles.reduce((a, f) => a + f.vision_time, 0) / visionFiles.length : null;
+        const avgEmbed = embedFiles.length > 0 ? embedFiles.reduce((a, f) => a + f.embed_time, 0) / embedFiles.length : null;
+
+        avgSection += '<div class="cards" style="margin-bottom:1.5rem">';
+        avgSection += `<div class="card"><div class="card-label">Avg Total / File</div><div class="card-value" style="font-size:1.2rem">${fmtTime(avgTotal)}</div></div>`;
+        if (avgVision != null) avgSection += `<div class="card"><div class="card-label">Avg Vision</div><div class="card-value" style="font-size:1.2rem">${fmtTime(avgVision)}</div></div>`;
+        if (avgEmbed != null) avgSection += `<div class="card"><div class="card-label">Avg Embed</div><div class="card-value" style="font-size:1.2rem">${fmtTime(avgEmbed)}</div></div>`;
+
+        // ETA
+        if (s.files_remaining > 0) {
+          const eta = avgTotal * s.files_remaining;
+          avgSection += `<div class="card"><div class="card-label">Est. Remaining</div><div class="card-value" style="font-size:1.2rem">${fmtTime(eta)}</div></div>`;
+        }
+        avgSection += '</div>';
+      }
+    }
+    html += avgSection;
+
+    // Recent files table
+    if (recent.length > 0) {
+      html += '<div class="section"><div class="section-title">Recent Files</div></div>';
+      html += '<div class="table-wrap"><table>';
+      html += '<tr><th>File</th><th>Status</th><th>Vision</th><th>Embed</th><th>Total</th><th>Time</th></tr>';
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const f = recent[i];
+        const statusDot = f.status === 'ok'
+          ? '<span class="status-dot status-ok"></span>ok'
+          : '<span class="status-dot status-error"></span>' + esc(f.error || 'error');
+        html += `<tr>
+          <td>${esc(f.file)}</td>
+          <td>${statusDot}</td>
+          <td>${f.vision_time != null ? f.vision_time + 's' : '-'}</td>
+          <td>${f.embed_time != null ? f.embed_time + 's' : '-'}</td>
+          <td>${f.total_time}s</td>
+          <td>${fmtDate(f.timestamp)}</td>
+        </tr>`;
+      }
+      html += '</table></div>';
+    } else if (s.state !== 'scanning') {
+      html += '<div class="no-data">No recent files processed</div>';
+    }
+
+    // Config summary
+    html += '<div class="section" style="margin-top:1.5rem"><div class="section-title">Patrol Configuration</div></div>';
+    html += '<div class="cards">';
+    const folders = Array.isArray(cfg.patrol_folders) ? cfg.patrol_folders : [];
+    const folderStr = folders.map(f => typeof f === 'string' ? f : f.path).join(', ') || 'none';
+    html += `<div class="card"><div class="card-label">Folders</div><div class="card-value" style="font-size:0.9rem">${esc(folderStr)}</div></div>`;
+    html += `<div class="card"><div class="card-label">Interval</div><div class="card-value" style="font-size:1.2rem">${cfg.patrol_interval_minutes || '-'}m</div></div>`;
+    const tw = (cfg.patrol_start_time && cfg.patrol_end_time) ? cfg.patrol_start_time + ' - ' + cfg.patrol_end_time : 'unrestricted';
+    html += `<div class="card"><div class="card-label">Time Window</div><div class="card-value" style="font-size:1rem">${esc(tw)}</div></div>`;
+    html += `<div class="card"><div class="card-label">Batch Size</div><div class="card-value" style="font-size:1.2rem">${cfg.patrol_batch_size || '-'}</div></div>`;
+    html += '</div>';
+
+    contentEl.innerHTML = html;
+
+    // Auto-refresh: faster when scanning, slower when idle
+    clearTimeout(refreshTimer);
+    const interval = s.state === 'scanning' ? 3000 : 30000;
+    refreshTimer = setTimeout(loadStatus, interval);
+
+  } catch (err) {
+    contentEl.innerHTML = `<div class="no-data" style="color:#f87171">Error: ${esc(err.message)}</div>`;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(loadStatus, 10000);
+  }
+}
+
+loadStatus();
+</script>
+</body>
+</html>
