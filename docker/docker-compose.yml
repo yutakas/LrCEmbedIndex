@@ -1,3 +1,5 @@
+name: lrcembedindex
+
 services:
   lrcembedindex:
     build:
@@ -15,6 +17,33 @@ services:
       - ${PHOTO_FOLDER:-./photos}:/photos
       # Persist the encryption key across container rebuilds
       - lrcembedindex-key:/root
+    environment:
+      # Timezone — ensures patrol time windows and timestamps use local time.
+      # Auto-detected by rebuild.sh; override with TZ in .env if needed.
+      - TZ=${TZ:-UTC}
+      # Server config — set in .env, applied as defaults.
+      # Once saved via the Settings UI, the JSON config takes precedence.
+      - INDEX_FOLDER=/data
+      - VISION_MODE=${VISION_MODE:-ollama}
+      - OLLAMA_VISION_ENDPOINT=${OLLAMA_VISION_ENDPOINT:-http://host.docker.internal:11434}
+      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL:-}
+      - OPENAI_VISION_MODEL=${OPENAI_VISION_MODEL:-}
+      - CLAUDE_VISION_MODEL=${CLAUDE_VISION_MODEL:-}
+      - EMBED_MODE=${EMBED_MODE:-ollama}
+      - OLLAMA_EMBED_ENDPOINT=${OLLAMA_EMBED_ENDPOINT:-http://host.docker.internal:11434}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-}
+      - OPENAI_EMBED_MODEL=${OPENAI_EMBED_MODEL:-}
+      - VOYAGE_EMBED_MODEL=${VOYAGE_EMBED_MODEL:-}
+      - SEARCH_MAX_RESULTS=${SEARCH_MAX_RESULTS:-}
+      - SEARCH_RELEVANCE=${SEARCH_RELEVANCE:-}
+      - THUMBNAIL_STORE_SIZE=${THUMBNAIL_STORE_SIZE:-}
+      - STRIP_GPS_FOR_CLOUD=${STRIP_GPS_FOR_CLOUD:-}
+      - DEBUG_LOGGING=${DEBUG_LOGGING:-}
+      - PATROL_ENABLED=${PATROL_ENABLED:-}
+      - PATROL_INTERVAL_MINUTES=${PATROL_INTERVAL_MINUTES:-}
+      - PATROL_BATCH_SIZE=${PATROL_BATCH_SIZE:-}
+      - PATROL_START_TIME=${PATROL_START_TIME:-}
+      - PATROL_END_TIME=${PATROL_END_TIME:-}
 
 volumes:
   lrcembedindex-key:
