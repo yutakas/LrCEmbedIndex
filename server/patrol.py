@@ -217,9 +217,13 @@ class PatrolWorker:
             # Overnight window, e.g. 22:00–06:00
             inside = cur >= start or cur < end
 
-        if not inside:
+        tz_name = now.astimezone().tzinfo
+        if inside:
+            logger.debug(f"Patrol: inside time window {start_str}-{end_str} "
+                         f"(now {now.strftime('%H:%M')}, tz={tz_name})")
+        else:
             logger.debug(f"Patrol: outside time window {start_str}-{end_str} "
-                         f"(now {now.strftime('%H:%M')}), skipping scan")
+                         f"(now {now.strftime('%H:%M')}, tz={tz_name}), skipping scan")
         return inside
 
     def _do_scan(self):
@@ -284,11 +288,16 @@ class PatrolWorker:
 
         # Process in batches
         for i, photo_path in enumerate(to_index):
-            # Check for stop/pause/interrupt between photos
+            # Check for stop/pause/interrupt/time-window between photos
             if self._stop_event.is_set():
                 break
             if self._pause_event.is_set():
                 self._state = "paused"
+                break
+            if not self._force_scan and not self._is_within_time_window():
+                logger.info("Patrol: time window closed, stopping scan "
+                            f"({self._files_processed} done, {len(to_index) - i} remaining)")
+                self._state = "waiting"
                 break
             if self._interrupt_event.is_set():
                 self._state = "interrupted"

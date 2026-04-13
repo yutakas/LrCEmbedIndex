@@ -138,7 +138,7 @@ _ENV_MAP = {
 
 
 def _apply_env_overrides():
-    """Apply environment variables to config as defaults (before JSON load)."""
+    """Apply environment variables to config (overrides saved JSON config)."""
     applied = []
     for env_name, (cfg_key, typ) in _ENV_MAP.items():
         val = os.environ.get(env_name)
@@ -158,6 +158,9 @@ def _apply_env_overrides():
 
     if applied:
         logger.info(f"Config from environment: {', '.join(applied)}")
+        for env_name in applied:
+            cfg_key = _ENV_MAP[env_name][0]
+            logger.debug(f"  {env_name} -> {cfg_key}={config[cfg_key]}")
 
 
 def _apply_photo_folder_default():
@@ -171,12 +174,9 @@ def _apply_photo_folder_default():
 def load_config():
     """Load config from disk. Encrypted API key fields are decrypted.
 
-    Precedence (highest wins): JSON config file > environment variables > defaults.
+    Precedence (highest wins): environment variables > JSON config file > defaults.
     """
     with _config_lock:
-        # Apply environment variables over hardcoded defaults
-        _apply_env_overrides()
-
         home_config = os.path.join(str(Path.home()), ".lrcembedindex_last_config.json")
         if os.path.exists(home_config):
             with open(home_config, "r") as f:
@@ -197,10 +197,13 @@ def load_config():
                             saved[k] = decrypt_value(saved[k])
                     config.update(saved)
                 logger.info(f"Loaded config from {home_config}")
+                # Env vars override saved JSON (standard 12-factor convention)
+                _apply_env_overrides()
                 _apply_photo_folder_default()
                 return True
 
         # No JSON config found — env overrides are the active config
+        _apply_env_overrides()
         _apply_photo_folder_default()
         if config.get("index_folder"):
             logger.info("Config initialized from environment variables")

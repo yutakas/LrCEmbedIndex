@@ -13,6 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ def startup():
     if config.get("patrol_enabled", False):
         patrol_worker.start()
         logger.info("Patrol auto-started (patrol_enabled=True)")
+    else:
+        logger.info("Patrol auto-start skipped (patrol_enabled=False)")
 
 
 if __name__ == "__main__":

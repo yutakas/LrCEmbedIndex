@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Ensure Python output (logs) is sent straight to docker logs without buffering
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Install system dependencies for rawpy (libraw) and Pillow

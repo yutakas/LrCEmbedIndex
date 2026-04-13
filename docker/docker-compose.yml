@@ -21,8 +21,7 @@ services:
       # Timezone — ensures patrol time windows and timestamps use local time.
       # Auto-detected by rebuild.sh; override with TZ in .env if needed.
       - TZ=${TZ:-UTC}
-      # Server config — set in .env, applied as defaults.
-      # Once saved via the Settings UI, the JSON config takes precedence.
+      # Server config — set in .env, overrides saved JSON config on restart.
       - INDEX_FOLDER=/data
       - PHOTO_FOLDER=/photos
       - VISION_MODE=${VISION_MODE:-ollama}
