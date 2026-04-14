@@ -82,6 +82,8 @@
     border-bottom: 1px solid #2a2a2a;
   }
   tr:last-child td { border-bottom: none; }
+  td a.file-link { color: #6b8afd; text-decoration: none; }
+  td a.file-link:hover { text-decoration: underline; }
 
   .status-dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
@@ -327,7 +329,7 @@ async function loadStatus() {
           ? '<span class="status-dot status-ok"></span>ok'
           : '<span class="status-dot status-error"></span>' + esc(f.error || 'error');
         html += `<tr>
-          <td>${esc(f.file)}</td>
+          <td>${f.path ? '<a class="file-link" href="/photo?path=' + encodeURIComponent(f.path) + '">' + esc(f.file) + '</a>' : esc(f.file)}</td>
           <td>${statusDot}</td>
           <td>${f.vision_time != null ? f.vision_time + 's' : '-'}</td>
           <td>${f.embed_time != null ? f.embed_time + 's' : '-'}</td>

@@ -320,6 +320,7 @@ class PatrolWorker:
                 elapsed = time.time() - self._current_file_start
                 self._recent_files.append({
                     "file": os.path.basename(photo_path),
+                    "path": photo_path,
                     "status": "ok",
                     "total_time": round(elapsed, 1),
                     "vision_time": self._current_vision_time,
@@ -332,6 +333,7 @@ class PatrolWorker:
                 elapsed = time.time() - self._current_file_start
                 self._recent_files.append({
                     "file": os.path.basename(photo_path),
+                    "path": photo_path,
                     "status": "error",
                     "error": str(e),
                     "total_time": round(elapsed, 1),
