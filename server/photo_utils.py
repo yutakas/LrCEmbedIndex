@@ -35,6 +35,33 @@ def find_photos(directory, extensions=None):
     return photos
 
 
+# Valid values for photo scan ordering (see order_photos / patrol_scan_order).
+SCAN_ORDERS = ("newest", "oldest", "name")
+
+
+def _file_mtime(path):
+    """File modification time used as a sort key. Missing or unreadable files
+    sort as oldest (0.0) so a race with deletion never breaks the scan."""
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def order_photos(photos, scan_order):
+    """Return photos ordered per scan_order.
+
+    "newest" / "oldest" sort by file modification time (descending / ascending).
+    "name" (or any unknown value) preserves the incoming filename-sorted order.
+    Sorts a copy so the caller's list is left untouched.
+    """
+    if scan_order == "newest":
+        return sorted(photos, key=_file_mtime, reverse=True)
+    if scan_order == "oldest":
+        return sorted(photos, key=_file_mtime)
+    return list(photos)
+
+
 def make_thumbnail_pillow(image_path):
     """Generate a JPEG thumbnail using Pillow (for JPEG, PNG, TIFF)."""
     from PIL import Image

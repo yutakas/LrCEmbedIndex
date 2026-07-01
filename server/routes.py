@@ -26,6 +26,7 @@ from vectorstore import (init_chromadb, upsert_photo, search_photos,
 from vision import describe_image
 from embedding import get_embedding
 from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
+from photo_utils import SCAN_ORDERS
 
 logger = logging.getLogger(__name__)
 
@@ -563,6 +564,12 @@ def update_settings():
             config["patrol_interval_minutes"] = max(1, int(data["patrol_interval_minutes"]))
         if "patrol_batch_size" in data:
             config["patrol_batch_size"] = max(1, int(data["patrol_batch_size"]))
+        if "patrol_scan_order" in data:
+            order = str(data["patrol_scan_order"])
+            if order not in SCAN_ORDERS:
+                return jsonify({"status": "error",
+                                "message": f"Invalid patrol_scan_order: '{order}'"}), 400
+            config["patrol_scan_order"] = order
         for key in ("patrol_start_time", "patrol_end_time"):
             if key in data:
                 val = (data[key] or "").strip()

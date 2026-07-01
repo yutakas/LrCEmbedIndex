@@ -352,6 +352,8 @@ async function loadStatus() {
     const tw = (cfg.patrol_start_time && cfg.patrol_end_time) ? cfg.patrol_start_time + ' - ' + cfg.patrol_end_time : 'unrestricted';
     html += `<div class="card"><div class="card-label">Time Window</div><div class="card-value" style="font-size:1rem">${esc(tw)}</div></div>`;
     html += `<div class="card"><div class="card-label">Batch Size</div><div class="card-value" style="font-size:1.2rem">${cfg.patrol_batch_size || '-'}</div></div>`;
+    const orderLabels = {newest: 'Newest first', oldest: 'Oldest first', name: 'Filename'};
+    html += `<div class="card"><div class="card-label">Scan Order</div><div class="card-value" style="font-size:1rem">${esc(orderLabels[cfg.patrol_scan_order] || 'Newest first')}</div></div>`;
     html += '</div>';
 
     contentEl.innerHTML = html;
