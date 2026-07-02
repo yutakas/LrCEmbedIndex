@@ -12,41 +12,17 @@ Usage:
 """
 
 import argparse
-import io
 import json
 import logging
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from photo_utils import make_thumbnail  # noqa: E402
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-RAW_EXTENSIONS = {
-    ".arw", ".cr2", ".cr3", ".nef", ".orf", ".raf",
-    ".rw2", ".dng", ".pef", ".srw", ".x3f",
-}
-
-
-def make_thumbnail(image_path, max_size=512, quality=85):
-    """Generate a JPEG thumbnail from an image file."""
-    from PIL import Image
-
-    ext = os.path.splitext(image_path)[1].lower()
-    if ext in RAW_EXTENSIONS:
-        import rawpy
-
-        with rawpy.imread(image_path) as raw:
-            rgb = raw.postprocess(use_camera_wb=True, half_size=True)
-        img = Image.fromarray(rgb)
-    else:
-        img = Image.open(image_path)
-
-    img.thumbnail((max_size, max_size))
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=quality)
-    return buf.getvalue()
 
 
 def thumbnail_path_for_metadata(json_path):
