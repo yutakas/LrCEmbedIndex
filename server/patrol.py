@@ -389,7 +389,8 @@ class PatrolWorker:
         basename = os.path.basename(image_path)
         logger.info(f"Patrol indexing: {basename}")
 
-        # Generate thumbnail (skip photo if RAW format is unsupported, e.g. Nikon Z9 compressed)
+        # Generate thumbnail (skip photo only if both RAW decode and the
+        # embedded-preview fallback fail; see make_thumbnail_raw)
         try:
             jpeg_data = make_thumbnail(image_path)
         except Exception as e:

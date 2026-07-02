@@ -62,39 +62,74 @@ def order_photos(photos, scan_order):
     return list(photos)
 
 
-def make_thumbnail_pillow(image_path):
+def _finish_thumbnail(img, max_size, quality):
+    """Resize a PIL image in place and encode it as JPEG bytes."""
+    img.thumbnail((max_size, max_size))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def make_thumbnail_pillow(image_path, max_size=MAX_THUMB_SIZE, quality=85):
     """Generate a JPEG thumbnail using Pillow (for JPEG, PNG, TIFF)."""
     from PIL import Image
 
     with Image.open(image_path) as img:
-        img.thumbnail((MAX_THUMB_SIZE, MAX_THUMB_SIZE))
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        return buf.getvalue()
+        return _finish_thumbnail(img, max_size, quality)
 
 
-def make_thumbnail_raw(image_path):
-    """Generate a JPEG thumbnail using rawpy (for RAW formats: NEF, ARW, CR2, etc.)."""
+def _embedded_preview_image(image_path):
+    """Open the camera-embedded preview of a RAW file as a PIL image.
+
+    Raises rawpy.LibRawError (or subclasses) when the file has no
+    extractable preview.
+    """
+    import rawpy
+    from PIL import Image, ImageOps
+
+    with rawpy.imread(image_path) as raw:
+        thumb = raw.extract_thumb()
+    if thumb.format == rawpy.ThumbFormat.JPEG:
+        img = Image.open(io.BytesIO(thumb.data))
+        img.load()
+        # Previews are stored unrotated; honor their EXIF orientation tag
+        # so portrait shots don't come out sideways (no-op when absent).
+        return ImageOps.exif_transpose(img)
+    return Image.fromarray(thumb.data)
+
+
+def make_thumbnail_raw(image_path, max_size=MAX_THUMB_SIZE, quality=85):
+    """Generate a JPEG thumbnail using rawpy (for RAW formats: NEF, ARW, CR2, etc.).
+
+    When LibRaw cannot decode the sensor data (e.g. Nikon Z8/Z9/Zf High
+    Efficiency NEF, whose TicoRAW compression is patent-encumbered), falls
+    back to the camera-embedded JPEG preview, which is full-size on those
+    bodies and plenty for a thumbnail.
+    """
     import rawpy
     from PIL import Image
 
-    with rawpy.imread(image_path) as raw:
-        rgb = raw.postprocess(use_camera_wb=True, half_size=True)
-    img = Image.fromarray(rgb)
-    img.thumbnail((MAX_THUMB_SIZE, MAX_THUMB_SIZE))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
+    try:
+        with rawpy.imread(image_path) as raw:
+            rgb = raw.postprocess(use_camera_wb=True, half_size=True)
+        img = Image.fromarray(rgb)
+    except rawpy.LibRawError:
+        logger.info(
+            f"LibRaw cannot decode {os.path.basename(image_path)}; "
+            f"using embedded preview"
+        )
+        img = _embedded_preview_image(image_path)
+    return _finish_thumbnail(img, max_size, quality)
 
 
-def make_thumbnail(image_path):
+def make_thumbnail(image_path, max_size=MAX_THUMB_SIZE, quality=85):
     """Generate a JPEG thumbnail, dispatching to rawpy for RAW files."""
     ext = os.path.splitext(image_path)[1].lower()
     if ext in RAW_EXTENSIONS:
-        return make_thumbnail_raw(image_path)
-    return make_thumbnail_pillow(image_path)
+        return make_thumbnail_raw(image_path, max_size=max_size, quality=quality)
+    return make_thumbnail_pillow(image_path, max_size=max_size, quality=quality)
 
 
 def extract_exif(image_path):
