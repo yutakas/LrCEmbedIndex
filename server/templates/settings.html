@@ -372,6 +372,15 @@ function renderForm() {
       <input type="number" id="patrol_batch_size" value="${c.patrol_batch_size || 10}" min="1" max="100">
     </div>
     <div class="field">
+      <label class="field-label">Scan Order</label>
+      <select id="patrol_scan_order">
+        <option value="newest" ${(c.patrol_scan_order||'newest')==='newest'?'selected':''}>Newest files first</option>
+        <option value="oldest" ${c.patrol_scan_order==='oldest'?'selected':''}>Oldest files first</option>
+        <option value="name" ${c.patrol_scan_order==='name'?'selected':''}>Filename (A→Z)</option>
+      </select>
+      <div style="font-size:0.7rem;color:#666;margin-top:0.25rem">Order photos are processed in, by file modification time.</div>
+    </div>
+    <div class="field">
       <label class="field-label">Active Hours (leave empty for always)</label>
       <div class="field-row">
         <input type="text" id="patrol_start_time" value="${esc(c.patrol_start_time || '')}" placeholder="HH:MM" maxlength="5" style="width:80px;text-align:center">
@@ -514,6 +523,7 @@ async function saveSettings() {
     patrol_enabled: val('patrol_enabled'),
     patrol_interval_minutes: val('patrol_interval_minutes'),
     patrol_batch_size: val('patrol_batch_size'),
+    patrol_scan_order: val('patrol_scan_order'),
     patrol_start_time: val('patrol_start_time'),
     patrol_end_time: val('patrol_end_time'),
     patrol_folders: collectFolders(),

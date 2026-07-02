@@ -62,6 +62,7 @@ config = {
     "patrol_batch_size": 10,    # photos to process per batch before checking for interrupts
     "patrol_start_time": "",    # HH:MM 24h format, empty = no restriction
     "patrol_end_time": "",      # HH:MM 24h format, empty = no restriction
+    "patrol_scan_order": "newest",  # order to process photos: newest | oldest | name
 }
 
 VERSION = "1.2.0"
@@ -134,6 +135,7 @@ _ENV_MAP = {
     "PATROL_BATCH_SIZE":        ("patrol_batch_size", int),
     "PATROL_START_TIME":        ("patrol_start_time", str),
     "PATROL_END_TIME":          ("patrol_end_time", str),
+    "PATROL_SCAN_ORDER":        ("patrol_scan_order", str),
 }
 
 

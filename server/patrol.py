@@ -23,7 +23,8 @@ from vectorstore import upsert_photo
 from vision import describe_image
 from embedding import get_embedding
 from helpers import exif_to_text, compute_content_hash, resize_thumbnail_bytes
-from photo_utils import find_photos, make_thumbnail, extract_exif, extract_exif_raw, RAW_EXTENSIONS
+from photo_utils import (find_photos, order_photos, make_thumbnail,
+                         extract_exif, extract_exif_raw, RAW_EXTENSIONS)
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +276,12 @@ class PatrolWorker:
         for photo_path in all_photos:
             if self._should_index(photo_path):
                 to_index.append(photo_path)
+
+        # Order the work list according to the configured scan order. This only
+        # affects processing order, not which photos are indexed. "name" keeps
+        # the filename-sorted discovery order from find_photos().
+        scan_order = config.get("patrol_scan_order", "newest")
+        to_index = order_photos(to_index, scan_order)
 
         self._files_remaining = len(to_index)
         self._total_discovered = len(all_photos)

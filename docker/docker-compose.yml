@@ -44,6 +44,7 @@ services:
       - PATROL_BATCH_SIZE=${PATROL_BATCH_SIZE:-}
       - PATROL_START_TIME=${PATROL_START_TIME:-}
       - PATROL_END_TIME=${PATROL_END_TIME:-}
+      - PATROL_SCAN_ORDER=${PATROL_SCAN_ORDER:-}
 
 volumes:
   lrcembedindex-key:
